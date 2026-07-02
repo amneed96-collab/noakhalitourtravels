@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>এডমিন প্যানেল</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ---------- লগইন স্ক্রিন ---------- -->
+<div id="login-screen" style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg, var(--forest-dark), var(--forest));">
+  <div class="form-card" style="max-width:380px; width:100%;">
+    <div class="text-center" style="margin-bottom:20px;">
+      <div class="brand-mark" style="margin:0 auto 12px;">🧳</div>
+      <h2 style="margin:0;">এডমিন লগইন</h2>
+      <p class="text-muted">শুধুমাত্র অনুমোদিত ব্যবহারকারীদের জন্য</p>
+    </div>
+    <form id="login-form">
+      <div class="form-group">
+        <label>ইউজারনেম</label>
+        <input type="text" name="username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label>পাসওয়ার্ড</label>
+        <input type="password" name="password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="login-btn">লগইন করুন</button>
+    </form>
+  </div>
+</div>
+
+<!-- ---------- এডমিন শেল ---------- -->
+<div class="admin-shell" id="admin-shell" style="display:none;">
+  <aside class="admin-sidebar">
+    <div class="brand">
+      <div class="brand-mark">🧳</div>
+      <div>
+        <div class="brand-name" style="font-size:1.05rem;" id="sidebar-group-name">ট্যুর এডমিন</div>
+        <div style="font-size:0.78rem; opacity:0.7;" id="sidebar-user"></div>
+      </div>
+    </div>
+    <nav class="admin-nav" id="admin-nav">
+      <a href="#" data-tab="packages" class="active">📦 প্যাকেজ সমূহ</a>
+      <a href="#" data-tab="new-package">➕ নতুন প্যাকেজ</a>
+      <a href="#" data-tab="bookings">🎫 বুকিং ব্যবস্থাপনা</a>
+      <a href="#" data-tab="expenses">💸 খরচ এন্ট্রি</a>
+      <a href="#" data-tab="reports" class="admin-only">📊 আয়-ব্যয় রিপোর্ট</a>
+      <a href="#" data-tab="admins" class="admin-only">👥 এডমিন ব্যবস্থাপনা</a>
+      <a href="#" id="logout-link" style="margin-top:20px; opacity:0.6;">🚪 লগআউট</a>
+    </nav>
+  </aside>
+
+  <main class="admin-main" id="admin-main">
+    <div class="spinner"></div>
+  </main>
+</div>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+qs('#sidebar-group-name').textContent = SITE_CONFIG.groupName;
+
+// ---------- লগইন ----------
+
+function checkSession() {
+  const session = Session.get();
+  if (session) {
+    qs('#login-screen').style.display = 'none';
+    qs('#admin-shell').style.display = 'flex';
+    qs('#sidebar-user').textContent = session.name + ' (' + roleLabel(session.role) + ')';
+    if (session.role !== 'admin') {
+      qsa('.admin-only').forEach(el => el.style.display = 'none');
+    }
+    loadTab('packages');
+  }
+}
+
+function roleLabel(role) {
+  return role === 'admin' ? 'প্রধান এডমিন' : 'সহকারী এডমিন';
+}
+
+qs('#login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = qs('#login-btn');
+  btn.disabled = true;
+  btn.textContent = 'যাচাই হচ্ছে...';
+  const fd = new FormData(e.target);
+  try {
+    const res = await apiPost('login', { username: fd.get('username'), password: fd.get('password') });
+    if (!res.ok) {
+      showToast(res.error, 'error');
+      btn.disabled = false;
+      btn.textContent = 'লগইন করুন';
+      return;
+    }
+    Session.set(res.data);
+    checkSession();
+  } catch (err) {
+    showToast('সংযোগ ত্রুটি: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'লগইন করুন';
+  }
+});
+
+qs('#logout-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  Session.clear();
+  location.reload();
+});
+
+qsa('.admin-nav a[data-tab]').forEach(a => {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    qsa('.admin-nav a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    loadTab(a.dataset.tab);
+  });
+});
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+// ---------- ট্যাব রাউটার ----------
+
+const TABS = {
+  packages: renderPackagesTab,
+  'new-package': renderNewPackageTab,
+  bookings: renderBookingsTab,
+  expenses: renderExpensesTab,
+  reports: renderReportsTab,
+  admins: renderAdminsTab
+};
+
+async function loadTab(name) {
+  const main = qs('#admin-main');
+  main.innerHTML = '<div class="spinner"></div>';
+  try {
+    await TABS[name]();
+  } catch (err) {
+    main.innerHTML = '<div class="empty-state">লোড করতে সমস্যা: ' + err.message + '</div>';
+  }
+}
+
+// ---------- ১. প্যাকেজ তালিকা ----------
+
+async function renderPackagesTab() {
+  const main = qs('#admin-main');
+  const res = await apiGet('getPackages');
+  if (!res.ok) throw new Error(res.error);
+  const packages = res.data;
+
+  main.innerHTML = `
+    <div class="flex-between"><h2>প্যাকেজ সমূহ</h2></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>স্পট</th><th>তারিখ</th><th>দিন</th><th>ডেলিগেট</th><th>ফি</th><th>স্ট্যাটাস</th><th>লিংক</th></tr></thead>
+      <tbody>
+        ${packages.map(p => `
+          <tr>
+            <td><strong>${escapeHtml(p.spotName)}</strong></td>
+            <td>${formatDate(p.startDate)} - ${formatDate(p.endDate)}</td>
+            <td>${toBengaliNumber(p.totalDays)}</td>
+            <td>${toBengaliNumber(p.delegateCount)}</td>
+            <td>${formatTaka(p.delegateFee)}</td>
+            <td><span class="status-chip status-confirmed">${p.status}</span></td>
+            <td><a href="booking.html?pkg=${p.slug}" target="_blank">বুকিং লিংক ↗</a></td>
+          </tr>
+        `).join('') || '<tr><td colspan="7" class="text-center text-muted">কোনো প্যাকেজ নেই</td></tr>'}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ---------- ২. নতুন প্যাকেজ তৈরি ----------
+
+let vehicleRows = [{ name: 'বাস-১', type: 'বাস', seatCount: 40 }];
+
+function renderNewPackageTab() {
+  const main = qs('#admin-main');
+  main.innerHTML = `
+    <h2>নতুন ট্যুর প্যাকেজ ঘোষণা</h2>
+    <div class="form-card" style="max-width:680px;">
+      <form id="pkg-form">
+        <div class="form-group"><label>পর্যটন কেন্দ্রের নাম *</label><input type="text" name="spotName" required placeholder="যেমন: সাজেক ভ্যালি"></div>
+        <div class="form-row">
+          <div class="form-group"><label>শুরুর তারিখ *</label><input type="date" name="startDate" required></div>
+          <div class="form-group"><label>শেষের তারিখ *</label><input type="date" name="endDate" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>মোট দিন *</label><input type="number" name="totalDays" min="1" required></div>
+          <div class="form-group"><label>ডেলিগেট সংখ্যা (লক্ষ্যমাত্রা) *</label><input type="number" name="delegateCount" min="1" required></div>
+        </div>
+        <div class="form-group"><label>জনপ্রতি ডেলিগেট ফি (টাকা) *</label><input type="number" name="delegateFee" min="0" required></div>
+
+        <fieldset>
+          <legend>🚌 গাড়ির তথ্য</legend>
+          <div id="vehicle-rows"></div>
+          <button type="button" class="btn btn-sm btn-forest" id="add-vehicle-btn">+ আরেকটি গাড়ি যোগ করুন</button>
+        </fieldset>
+
+        <div class="form-group"><label>অতিরিক্ত নোট (ঐচ্ছিক)</label><textarea name="coverNote" rows="2"></textarea></div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="pkg-submit-btn">প্যাকেজ প্রকাশ করুন</button>
+      </form>
+    </div>
+  `;
+  renderVehicleRows();
+  qs('#add-vehicle-btn').addEventListener('click', () => {
+    vehicleRows.push({ name: '', type: 'বাস', seatCount: 30 });
+    renderVehicleRows();
+  });
+  qs('#pkg-form').addEventListener('submit', submitNewPackage);
+}
+
+function renderVehicleRows() {
+  const container = qs('#vehicle-rows');
+  container.innerHTML = vehicleRows.map((v, i) => `
+    <div class="form-row" style="grid-template-columns: 1.4fr 1fr 0.8fr auto; align-items:end; margin-bottom:10px;">
+      <div class="form-group" style="margin:0;"><label>গাড়ির নাম</label><input type="text" data-idx="${i}" data-field="name" value="${escapeHtml(v.name)}" placeholder="যেমন: বাস-১"></div>
+      <div class="form-group" style="margin:0;"><label>ধরন</label>
+        <select data-idx="${i}" data-field="type">
+          <option value="বাস" ${v.type === 'বাস' ? 'selected' : ''}>বাস</option>
+          <option value="হাইস" ${v.type === 'হাইস' ? 'selected' : ''}>হাইস</option>
+          <option value="নোয়াহ" ${v.type === 'নোয়াহ' ? 'selected' : ''}>নোয়াহ</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;"><label>সীট সংখ্যা</label><input type="number" min="1" data-idx="${i}" data-field="seatCount" value="${v.seatCount}"></div>
+      <button type="button" class="btn btn-sm btn-danger remove-vehicle" data-idx="${i}" ${vehicleRows.length === 1 ? 'disabled' : ''}>✕</button>
+    </div>
+  `).join('');
+
+  qsa('#vehicle-rows input, #vehicle-rows select').forEach(el => {
+    el.addEventListener('input', () => {
+      const idx = Number(el.dataset.idx);
+      const field = el.dataset.field;
+      vehicleRows[idx][field] = field === 'seatCount' ? Number(el.value) : el.value;
+    });
+  });
+  qsa('.remove-vehicle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      vehicleRows.splice(Number(btn.dataset.idx), 1);
+      renderVehicleRows();
+    });
+  });
+}
+
+async function submitNewPackage(e) {
+  e.preventDefault();
+  const btn = qs('#pkg-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'প্রকাশ হচ্ছে...';
+  const fd = new FormData(e.target);
+
+  const invalidVehicle = vehicleRows.find(v => !v.name || !v.seatCount);
+  if (invalidVehicle) {
+    showToast('প্রতিটি গাড়ির নাম ও সীট সংখ্যা দিন', 'error');
+    btn.disabled = false;
+    btn.textContent = 'প্যাকেজ প্রকাশ করুন';
+    return;
+  }
+
+  try {
+    const res = await apiPost('createPackage', {
+      spotName: fd.get('spotName'),
+      startDate: fd.get('startDate'),
+      endDate: fd.get('endDate'),
+      totalDays: Number(fd.get('totalDays')),
+      delegateCount: Number(fd.get('delegateCount')),
+      delegateFee: Number(fd.get('delegateFee')),
+      vehicles: vehicleRows,
+      coverNote: fd.get('coverNote')
+    });
+    if (!res.ok) throw new Error(res.error);
+    showToast('প্যাকেজ সফলভাবে প্রকাশিত হয়েছে!', 'success');
+    vehicleRows = [{ name: 'বাস-১', type: 'বাস', seatCount: 40 }];
+    loadTab('packages');
+    qsa('.admin-nav a').forEach(x => x.classList.remove('active'));
+    qs('[data-tab="packages"]').classList.add('active');
+  } catch (err) {
+    showToast('ত্রুটি: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'প্যাকেজ প্রকাশ করুন';
+  }
+}
+
+// ---------- ৩. বুকিং ব্যবস্থাপনা ----------
+
+async function renderBookingsTab() {
+  const main = qs('#admin-main');
+  const pkgRes = await apiGet('getPackages');
+  const packages = pkgRes.ok ? pkgRes.data : [];
+
+  main.innerHTML = `
+    <h2>বুকিং ব্যবস্থাপনা</h2>
+    <div class="form-group" style="max-width:340px;">
+      <label>প্যাকেজ নির্বাচন করুন</label>
+      <select id="pkg-select">
+        <option value="">-- প্যাকেজ বেছে নিন --</option>
+        ${packages.map(p => `<option value="${p.id}">${escapeHtml(p.spotName)} (${formatDate(p.startDate)})</option>`).join('')}
+      </select>
+    </div>
+    <div id="bookings-content" class="mt-24"></div>
+  `;
+
+  qs('#pkg-select').addEventListener('change', async (e) => {
+    const pkgId = e.target.value;
+    if (!pkgId) { qs('#bookings-content').innerHTML = ''; return; }
+    await loadBookingsForPackage(pkgId, packages.find(p => p.id === pkgId));
+  });
+}
+
+async function loadBookingsForPackage(pkgId, pkg) {
+  const content = qs('#bookings-content');
+  content.innerHTML = '<div class="spinner"></div>';
+
+  const [bkRes, seatRes] = await Promise.all([
+    apiGet('getBookings', { packageId: pkgId }),
+    apiGet('getSeats', { packageId: pkgId })
+  ]);
+  const bookings = bkRes.ok ? bkRes.data : [];
+  const seats = seatRes.ok ? seatRes.data : [];
+
+  content.innerHTML = `
+    <div class="flex-between" style="margin-bottom:16px;">
+      <h3 style="margin:0;">বুকিং তালিকা (${toBengaliNumber(bookings.length)})</h3>
+      <button class="btn btn-sm btn-forest" id="hold-seats-btn">🔒 সীট হোল্ড করুন</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ক্রম</th><th>নাম</th><th>মোবাইল</th><th>গাড়ি/সীট</th><th>ফি</th><th>জমা</th><th>বকেয়া</th><th>স্ট্যাটাস</th><th>কার্যক্রম</th></tr></thead>
+      <tbody>
+        ${bookings.map(b => `
+          <tr>
+            <td>${toBengaliNumber(b.serial)}</td>
+            <td><strong>${escapeHtml(b.name)}</strong><br><span class="text-muted" style="font-size:0.8rem;">${escapeHtml(b.address)}</span></td>
+            <td>${escapeHtml(b.mobile)}</td>
+            <td>${escapeHtml(b.vehicleName)} - ${escapeHtml(b.seatNo)}</td>
+            <td>${formatTaka(b.delegateFee)}</td>
+            <td>
+              <input type="number" class="paid-input" data-id="${b.id}" data-fee="${b.delegateFee}" value="${b.paidAmount}" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;">
+            </td>
+            <td class="due-cell-${b.id}">${formatTaka(b.dueAmount)}</td>
+            <td><span class="status-chip status-${b.status}">${statusLabel(b.status)}</span></td>
+            <td>
+              ${b.status === 'pending' ? `<button class="btn btn-sm btn-primary confirm-btn" data-id="${b.id}">কনফার্ম</button>` : ''}
+              ${b.status !== 'cancelled' ? `<button class="btn btn-sm btn-danger cancel-btn" data-id="${b.id}">বাতিল</button>` : ''}
+            </td>
+          </tr>
+        `).join('') || '<tr><td colspan="9" class="text-center text-muted">কোনো বুকিং নেই</td></tr>'}
+      </tbody>
+    </table></div>
+  `;
+
+  qsa('.confirm-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const session = Session.get();
+    btn.disabled = true;
+    const res = await apiPost('confirmBooking', { bookingId: btn.dataset.id, confirmedBy: session.username });
+    if (res.ok) { showToast('বুকিং কনফার্ম হয়েছে', 'success'); loadBookingsForPackage(pkgId, pkg); }
+    else { showToast(res.error, 'error'); btn.disabled = false; }
+  }));
+
+  qsa('.cancel-btn').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('এই বুকিংটি বাতিল করতে চান?')) return;
+    const res = await apiPost('cancelBooking', { bookingId: btn.dataset.id });
+    if (res.ok) { showToast('বুকিং বাতিল হয়েছে', 'success'); loadBookingsForPackage(pkgId, pkg); }
+    else showToast(res.error, 'error');
+  }));
+
+  qsa('.paid-input').forEach(input => {
+    let timeout;
+    input.addEventListener('input', () => {
+      clearTimeout(timeout);
+      const due = Math.max(0, Number(input.dataset.fee) - (Number(input.value) || 0));
+      qs('.due-cell-' + input.dataset.id).textContent = formatTaka(due);
+      timeout = setTimeout(async () => {
+        await apiPost('updatePayment', { bookingId: input.dataset.id, paidAmount: Number(input.value) || 0 });
+        showToast('পেমেন্ট হালনাগাদ হয়েছে', 'success');
+      }, 700);
+    });
+  });
+
+  qs('#hold-seats-btn').addEventListener('click', () => openHoldSeatsModal(pkg, seats));
+}
+
+function statusLabel(status) {
+  return { pending: 'অপেক্ষমান', confirmed: 'কনফার্ম', cancelled: 'বাতিল' }[status] || status;
+}
+
+function openHoldSeatsModal(pkg, seats) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <button class="modal-close">✕</button>
+      <h3>সীট হোল্ড করুন</h3>
+      <p class="text-muted">এডমিনের জন্য সংরক্ষিত রাখতে যেসব সীটে ক্লিক করবেন সেগুলো হোল্ড হয়ে যাবে।</p>
+      ${pkg.vehicles.map(v => {
+        const vSeats = seats.filter(s => s.vehicleName === v.name);
+        return `
+          <div class="vehicle-block">
+            <div class="vehicle-header">${escapeHtml(v.name)}</div>
+            <div class="seat-grid">
+              ${vSeats.map(s => `<div class="seat ${s.status === 'available' ? 'seat-available' : (s.status === 'booked' ? 'seat-booked' : 'seat-held')}" data-vehicle="${escapeHtml(v.name)}" data-seat="${escapeHtml(s.seatNo)}" data-status="${s.status}">${escapeHtml(s.seatNo)}</div>`).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+      <button class="btn btn-primary btn-block" id="confirm-hold-btn">নির্বাচিত সীট হোল্ড করুন</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const toHold = [];
+  qsa('.seat[data-status="available"]', overlay).forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.vehicle + '|' + el.dataset.seat;
+      if (toHold.includes(key)) {
+        toHold.splice(toHold.indexOf(key), 1);
+        el.classList.remove('seat-selected');
+      } else {
+        toHold.push(key);
+        el.classList.add('seat-selected');
+      }
+    });
+  });
+
+  overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#confirm-hold-btn').addEventListener('click', async () => {
+    if (toHold.length === 0) { showToast('কোনো সীট নির্বাচিত হয়নি', 'error'); return; }
+    const byVehicle = {};
+    toHold.forEach(k => {
+      const [v, s] = k.split('|');
+      byVehicle[v] = byVehicle[v] || [];
+      byVehicle[v].push(s);
+    });
+    for (const v of Object.keys(byVehicle)) {
+      await apiPost('holdSeats', { packageId: pkg.id, vehicleName: v, seats: byVehicle[v], holdNote: 'এডমিন হোল্ড' });
+    }
+    showToast('সীট হোল্ড করা হয়েছে', 'success');
+    overlay.remove();
+    loadBookingsForPackage(pkg.id, pkg);
+  });
+}
+
+// ---------- ৪. খরচ এন্ট্রি ----------
+
+async function renderExpensesTab() {
+  const main = qs('#admin-main');
+  const pkgRes = await apiGet('getPackages');
+  const packages = pkgRes.ok ? pkgRes.data : [];
+
+  main.innerHTML = `
+    <h2>প্যাকেজ ভিত্তিক খরচ এন্ট্রি</h2>
+    <div class="form-group" style="max-width:340px;">
+      <label>প্যাকেজ নির্বাচন করুন</label>
+      <select id="exp-pkg-select">
+        <option value="">-- প্যাকেজ বেছে নিন --</option>
+        ${packages.map(p => `<option value="${p.id}">${escapeHtml(p.spotName)}</option>`).join('')}
+      </select>
+    </div>
+    <div id="expenses-content" class="mt-24"></div>
+  `;
+
+  qs('#exp-pkg-select').addEventListener('change', (e) => {
+    if (!e.target.value) { qs('#expenses-content').innerHTML = ''; return; }
+    loadExpensesForPackage(e.target.value);
+  });
+}
+
+async function loadExpensesForPackage(pkgId) {
+  const content = qs('#expenses-content');
+  content.innerHTML = '<div class="spinner"></div>';
+  const res = await apiGet('getExpenses', { packageId: pkgId });
+  const expenses = res.ok ? res.data : [];
+  const total = expenses.reduce((s, x) => s + Number(x.amount), 0);
+
+  content.innerHTML = `
+    <div class="form-card" style="max-width:600px; margin-bottom:24px;">
+      <h3 style="margin-top:0;">নতুন খরচ যোগ করুন</h3>
+      <form id="exp-form">
+        <div class="form-row">
+          <div class="form-group"><label>খাত/শিরোনাম *</label><input type="text" name="title" required placeholder="যেমন: গাড়ি ভাড়া"></div>
+          <div class="form-group"><label>ক্যাটাগরি</label>
+            <select name="category">
+              <option>গাড়ি ভাড়া</option><option>খাবার</option><option>থাকা</option><option>টিকিট/এন্ট্রি ফি</option><option>অন্যান্য</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>পরিমাণ (টাকা) *</label><input type="number" name="amount" min="0" required></div>
+          <div class="form-group"><label>তারিখ</label><input type="date" name="date"></div>
+        </div>
+        <div class="form-group"><label>নোট</label><input type="text" name="note"></div>
+        <button type="submit" class="btn btn-primary">খরচ যোগ করুন</button>
+      </form>
+    </div>
+    <div class="flex-between"><h3>খরচের তালিকা</h3><div class="pkg-fee">${formatTaka(total)}</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>শিরোনাম</th><th>ক্যাটাগরি</th><th>পরিমাণ</th><th>তারিখ</th><th>নোট</th><th></th></tr></thead>
+      <tbody>
+        ${expenses.map(x => `
+          <tr>
+            <td>${escapeHtml(x.title)}</td>
+            <td>${escapeHtml(x.category)}</td>
+            <td>${formatTaka(x.amount)}</td>
+            <td>${formatDate(x.date)}</td>
+            <td class="text-muted">${escapeHtml(x.note)}</td>
+            <td><button class="btn btn-sm btn-danger del-exp-btn" data-id="${x.id}">✕</button></td>
+          </tr>
+        `).join('') || '<tr><td colspan="6" class="text-center text-muted">কোনো খরচ যোগ করা হয়নি</td></tr>'}
+      </tbody>
+    </table></div>
+  `;
+
+  qs('#exp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const session = Session.get();
+    const res = await apiPost('addExpense', {
+      packageId: pkgId, title: fd.get('title'), category: fd.get('category'),
+      amount: Number(fd.get('amount')), date: fd.get('date'), note: fd.get('note'), addedBy: session.username
+    });
+    if (res.ok) { showToast('খরচ যোগ হয়েছে', 'success'); loadExpensesForPackage(pkgId); }
+  });
+
+  qsa('.del-exp-btn').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('মুছে ফেলতে চান?')) return;
+    const res = await apiPost('deleteExpense', { id: btn.dataset.id });
+    if (res.ok) { showToast('মুছে ফেলা হয়েছে', 'success'); loadExpensesForPackage(pkgId); }
+  }));
+}
+
+// ---------- ৫ ও ৬. রিপোর্ট (এডমিন-মাত্র) ----------
+
+async function renderReportsTab() {
+  const session = Session.get();
+  if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু প্রধান এডমিনের জন্য।</div>'; return; }
+
+  const main = qs('#admin-main');
+  const res = await apiGet('getOverallReport');
+  if (!res.ok) throw new Error(res.error);
+  const r = res.data;
+
+  main.innerHTML = `
+    <h2>মোট আয়-ব্যয় রিপোর্ট</h2>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="label">মোট প্যাকেজ</div><div class="value">${toBengaliNumber(r.totalPackages)}</div></div>
+      <div class="stat-card"><div class="label">মোট বুকিং</div><div class="value">${toBengaliNumber(r.totalBookings)}</div></div>
+      <div class="stat-card gold"><div class="label">মোট আয় (জমা)</div><div class="value">${formatTaka(r.totalIncome)}</div></div>
+      <div class="stat-card red"><div class="label">মোট বকেয়া</div><div class="value">${formatTaka(r.totalDue)}</div></div>
+      <div class="stat-card red"><div class="label">মোট ব্যয়</div><div class="value">${formatTaka(r.totalExpense)}</div></div>
+      <div class="stat-card"><div class="label">নীট মুনাফা</div><div class="value">${formatTaka(r.netProfit)}</div></div>
+    </div>
+
+    <h3>প্যাকেজ ভিত্তিক আয়-ব্যয়</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>স্পট</th><th>বুকিং</th><th>আয়</th><th>ব্যয়</th><th>বকেয়া</th><th>নীট মুনাফা</th></tr></thead>
+      <tbody>
+        ${r.perPackage.map(p => `
+          <tr>
+            <td><strong>${escapeHtml(p.spotName)}</strong></td>
+            <td>${toBengaliNumber(p.bookings)}</td>
+            <td>${formatTaka(p.totalIncome)}</td>
+            <td>${formatTaka(p.totalExpense)}</td>
+            <td>${formatTaka(p.totalDue)}</td>
+            <td style="font-weight:700; color:${p.netProfit >= 0 ? 'var(--forest)' : 'var(--red)'};">${formatTaka(p.netProfit)}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="6" class="text-center text-muted">কোনো তথ্য নেই</td></tr>'}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ---------- ৭. এডমিন ব্যবস্থাপনা (প্রধান এডমিন-মাত্র) ----------
+
+async function renderAdminsTab() {
+  const session = Session.get();
+  if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু প্রধান এডমিনের জন্য।</div>'; return; }
+
+  const main = qs('#admin-main');
+  const res = await apiPost('getAdmins', {});
+  const admins = res.ok ? res.data : [];
+
+  main.innerHTML = `
+    <h2>এডমিন ও সহকারী ব্যবস্থাপনা</h2>
+    <div class="form-card" style="max-width:520px; margin-bottom:24px;">
+      <h3 style="margin-top:0;">নতুন সহকারী এডমিন যোগ করুন</h3>
+      <form id="admin-form">
+        <div class="form-row">
+          <div class="form-group"><label>ইউজারনেম *</label><input type="text" name="username" required></div>
+          <div class="form-group"><label>পাসওয়ার্ড *</label><input type="text" name="password" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>নাম *</label><input type="text" name="name" required></div>
+          <div class="form-group"><label>ভূমিকা</label>
+            <select name="role"><option value="co-admin">সহকারী এডমিন</option><option value="admin">প্রধান এডমিন</option></select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">যোগ করুন</button>
+      </form>
+    </div>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>ইউজারনেম</th><th>নাম</th><th>ভূমিকা</th><th>সক্রিয়</th><th></th></tr></thead>
+      <tbody>
+        ${admins.map(a => `
+          <tr>
+            <td>${escapeHtml(a.username)}</td>
+            <td>${escapeHtml(a.name)}</td>
+            <td>${roleLabel(a.role)}</td>
+            <td>${a.active ? '✅' : '❌'}</td>
+            <td>
+              ${a.username !== session.username ? `<button class="btn btn-sm btn-danger del-admin-btn" data-username="${a.username}">✕ মুছুন</button>` : '<span class="text-muted">(আপনি)</span>'}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+
+  qs('#admin-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const res = await apiPost('manageAdmin', {
+      mode: 'add', username: fd.get('username'), password: fd.get('password'),
+      name: fd.get('name'), role: fd.get('role')
+    });
+    if (res.ok) { showToast('যোগ করা হয়েছে', 'success'); renderAdminsTab(); }
+    else showToast(res.error, 'error');
+  });
+
+  qsa('.del-admin-btn').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('এই এডমিনকে মুছে ফেলতে চান?')) return;
+    const res = await apiPost('manageAdmin', { mode: 'delete', username: btn.dataset.username });
+    if (res.ok) { showToast('মুছে ফেলা হয়েছে', 'success'); renderAdminsTab(); }
+  }));
+}
+
+checkSession();
+</script>
+</body>
+</html>

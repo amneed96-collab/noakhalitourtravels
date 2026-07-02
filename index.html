@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ভ্রমণসঙ্গী ট্যুর গ্রুপ - প্যাকেজ সমূহ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <div class="brand">
+      <div class="brand-mark">🧳</div>
+      <div>
+        <div class="brand-name" id="header-group-name">ভ্রমণসঙ্গী ট্যুর গ্রুপ</div>
+        <div class="brand-tagline" id="header-tagline">বাংলাদেশ ঘুরে দেখি, একসাথে</div>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="index.html">প্যাকেজ সমূহ</a>
+      <a href="admin.html">এডমিন লগইন</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container">
+    <span class="eyebrow">🇧🇩 বাংলাদেশ ভ্রমণ</span>
+    <h1>নতুন গন্তব্যে যাত্রা শুরু হোক আমাদের সাথে</h1>
+    <p>প্রতিটি ট্যুরে আসন সংরক্ষিত, স্বচ্ছ হিসাব, এবং নির্ভরযোগ্য আয়োজন। নিচে থেকে আপনার পছন্দের ট্যুর বেছে বুকিং দিন।</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-title">
+      <h2>চলতি ও আসন্ন ট্যুর প্যাকেজ</h2>
+      <p>আসন সীমিত, তাই দ্রুত বুকিং নিশ্চিত করুন</p>
+    </div>
+
+    <div id="pkg-list">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="container">
+    <div id="footer-group-name">ভ্রমণসঙ্গী ট্যুর গ্রুপ</div>
+    <div class="social-links" id="social-links"></div>
+    <div style="margin-top:14px; opacity:0.7;">© <span id="year"></span> সর্বস্বত্ব সংরক্ষিত</div>
+  </div>
+</footer>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+qs('#year').textContent = new Date().getFullYear();
+qs('#header-group-name').textContent = SITE_CONFIG.groupName;
+qs('#footer-group-name').textContent = SITE_CONFIG.groupName;
+qs('#header-tagline').textContent = SITE_CONFIG.tagline;
+
+if (SITE_CONFIG.facebookUrl) {
+  const social = qs('#social-links');
+  const a = document.createElement('a');
+  a.href = SITE_CONFIG.facebookUrl;
+  a.target = '_blank';
+  a.textContent = '📘 ফেসবুক পেজ';
+  social.appendChild(a);
+}
+
+async function loadPackages() {
+  const listEl = qs('#pkg-list');
+  try {
+    const res = await apiGet('getPackages');
+    if (!res.ok) throw new Error(res.error);
+    const packages = res.data.filter(p => p.status === 'active');
+
+    if (packages.length === 0) {
+      listEl.innerHTML = '<div class="empty-state">এই মুহূর্তে কোনো সক্রিয় ট্যুর প্যাকেজ নেই। শীঘ্রই নতুন প্যাকেজ আসছে!</div>';
+      return;
+    }
+
+    // প্রতিটি প্যাকেজের সিট তথ্য আনা
+    const withSeats = await Promise.all(packages.map(async p => {
+      const seatRes = await apiGet('getSeats', { packageId: p.id });
+      const seats = seatRes.ok ? seatRes.data : [];
+      const total = seats.length;
+      const taken = seats.filter(s => s.status !== 'available').length;
+      return { ...p, totalSeats: total, availableSeats: total - taken };
+    }));
+
+    listEl.innerHTML = '<div class="pkg-grid">' + withSeats.map(renderCard).join('') + '</div>';
+  } catch (err) {
+    listEl.innerHTML = '<div class="empty-state">লোড করতে সমস্যা হয়েছে: ' + err.message + '<br><br><span class="text-muted">নিশ্চিত করুন config.js এ সঠিক API_URL বসানো আছে।</span></div>';
+  }
+}
+
+function renderCard(p) {
+  const totalVehicles = p.vehicles.length;
+  const vehicleSummary = p.vehicles.map(v => v.name + ' (' + toBengaliNumber(v.seatCount) + ' সীট)').join(', ');
+  const seatsLeftText = p.totalSeats > 0
+    ? (p.availableSeats > 0 ? `🎟️ ${toBengaliNumber(p.availableSeats)} টি আসন খালি আছে` : '❌ সব আসন বুক হয়ে গেছে')
+    : '';
+
+  return `
+    <div class="pkg-card">
+      <div class="pkg-card-top">
+        <span class="pkg-badge">${toBengaliNumber(p.totalDays)} দিন</span>
+        <h3 class="spot-name">${escapeHtml(p.spotName)}</h3>
+      </div>
+      <div class="pkg-card-body">
+        <div class="pkg-meta-row"><span>যাত্রার তারিখ</span><strong>${formatDate(p.startDate)}</strong></div>
+        <div class="pkg-meta-row"><span>ফেরার তারিখ</span><strong>${formatDate(p.endDate)}</strong></div>
+        <div class="pkg-meta-row"><span>মোট ডেলিগেট</span><strong>${toBengaliNumber(p.delegateCount)} জন</strong></div>
+        <div class="pkg-meta-row"><span>বাহন</span><strong style="white-space:normal; text-align:right;">${escapeHtml(vehicleSummary || '—')}</strong></div>
+        <div class="flex-between">
+          <div class="pkg-fee">${formatTaka(p.delegateFee)}<span> / জন</span></div>
+        </div>
+        <div class="pkg-seats-left">${seatsLeftText}</div>
+      </div>
+      <div class="pkg-card-footer">
+        <a class="btn btn-primary btn-block" href="booking.html?pkg=${p.slug || p.id}">বুকিং করুন</a>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+loadPackages();
+</script>
+</body>
+</html>

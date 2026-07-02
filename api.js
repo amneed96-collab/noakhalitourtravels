@@ -1,0 +1,85 @@
+// ============================================================
+// API হেল্পার - Google Apps Script ব্যাকএন্ডের সাথে যোগাযোগ
+// ============================================================
+
+async function apiGet(action, params) {
+  const url = new URL(API_URL);
+  url.searchParams.set('action', action);
+  if (params) {
+    Object.keys(params).forEach(k => {
+      if (params[k] !== undefined && params[k] !== null) {
+        url.searchParams.set(k, params[k]);
+      }
+    });
+  }
+  const res = await fetch(url.toString());
+  return res.json();
+}
+
+async function apiPost(action, body) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Apps Script CORS-friendly
+    body: JSON.stringify({ action, ...body })
+  });
+  return res.json();
+}
+
+// ---------- সেশন ম্যানেজমেন্ট (ইন-মেমরি, ব্রাউজার রিফ্রেশে হারাবে না কারণ sessionStorage ব্যবহার করা হচ্ছে) ----------
+
+const Session = {
+  KEY: 'tour_admin_session',
+  set(data) {
+    sessionStorage.setItem(this.KEY, JSON.stringify(data));
+  },
+  get() {
+    const raw = sessionStorage.getItem(this.KEY);
+    return raw ? JSON.parse(raw) : null;
+  },
+  clear() {
+    sessionStorage.removeItem(this.KEY);
+  },
+  isLoggedIn() {
+    return !!this.get();
+  }
+};
+
+// ---------- সাধারণ ইউটিলিটি ----------
+
+function formatTaka(amount) {
+  const n = Number(amount) || 0;
+  return '৳' + n.toLocaleString('bn-BD');
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return d.toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function toBengaliNumber(num) {
+  const bn = ['০','১','২','৩','৪','৫','৬','৭','৮','৯'];
+  return String(num).replace(/[0-9]/g, d => bn[d]);
+}
+
+function qs(sel, root) { return (root || document).querySelector(sel); }
+function qsa(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+
+function showToast(msg, type) {
+  let container = qs('#toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-' + (type || 'info');
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}

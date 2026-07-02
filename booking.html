@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>বুকিং ফরম</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <div class="brand">
+      <div class="brand-mark">🧳</div>
+      <div>
+        <div class="brand-name" id="header-group-name">ভ্রমণসঙ্গী ট্যুর গ্রুপ</div>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="index.html">← প্যাকেজ সমূহ</a>
+    </nav>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container" id="page-content">
+    <div class="spinner"></div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="container">
+    <div id="footer-group-name">ভ্রমণসঙ্গী ট্যুর গ্রুপ</div>
+  </div>
+</footer>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+qs('#header-group-name').textContent = SITE_CONFIG.groupName;
+qs('#footer-group-name').textContent = SITE_CONFIG.groupName;
+
+const params = new URLSearchParams(location.search);
+const pkgIdentifier = params.get('pkg');
+
+let currentPackage = null;
+let currentSeats = [];
+let selectedVehicle = null;
+let selectedSeat = null;
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+async function init() {
+  const content = qs('#page-content');
+  if (!pkgIdentifier) {
+    content.innerHTML = '<div class="empty-state">কোনো প্যাকেজ নির্বাচিত নেই। <a href="index.html">প্যাকেজ তালিকায় ফিরে যান</a></div>';
+    return;
+  }
+
+  try {
+    const pkgRes = await apiGet('getPackage', { id: pkgIdentifier });
+    if (!pkgRes.ok || !pkgRes.data) throw new Error('প্যাকেজ পাওয়া যায়নি');
+    currentPackage = pkgRes.data;
+
+    const seatRes = await apiGet('getSeats', { packageId: currentPackage.id });
+    currentSeats = seatRes.ok ? seatRes.data : [];
+
+    render();
+  } catch (err) {
+    content.innerHTML = '<div class="empty-state">লোড করতে সমস্যা: ' + err.message + '</div>';
+  }
+}
+
+function render() {
+  const content = qs('#page-content');
+  const p = currentPackage;
+
+  content.innerHTML = `
+    <div class="section-title" style="text-align:right; margin:0 0 4px;"></div>
+    <div class="flex-between" style="margin-bottom: 28px;">
+      <div>
+        <span class="eyebrow">🎫 বুকিং ফরম</span>
+        <h1 style="margin:0;">${escapeHtml(p.spotName)}</h1>
+        <p class="text-muted">${formatDate(p.startDate)} — ${formatDate(p.endDate)} · ${toBengaliNumber(p.totalDays)} দিন · ${formatTaka(p.delegateFee)}/জন</p>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1.2fr 1fr; gap: 28px;" id="booking-grid">
+      <div>
+        <h3>🚌 গাড়ি ও সীট নির্বাচন করুন</h3>
+        <div id="vehicle-list"></div>
+      </div>
+      <div>
+        <h3>👤 বুকিং তথ্য</h3>
+        <div class="form-card">
+          <form id="booking-form">
+            <div class="form-group">
+              <label>নাম *</label>
+              <input type="text" name="name" required placeholder="আপনার পূর্ণ নাম">
+            </div>
+            <div class="form-group">
+              <label>মোবাইল নম্বর *</label>
+              <input type="tel" name="mobile" required placeholder="01XXXXXXXXX" pattern="[0-9]{11}">
+            </div>
+            <div class="form-group">
+              <label>ঠিকানা *</label>
+              <textarea name="address" rows="2" required placeholder="বর্তমান ঠিকানা"></textarea>
+            </div>
+            <div class="form-group">
+              <label>নির্বাচিত গাড়ি ও সীট</label>
+              <input type="text" id="selected-seat-display" readonly placeholder="বামপাশ থেকে একটি সীট বেছে নিন" style="background:var(--cream-dark); font-weight:700; color:var(--forest);">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>ডেলিগেট ফি</label>
+                <input type="text" id="fee-display" readonly value="${formatTaka(p.delegateFee)}" style="background:var(--cream-dark);">
+              </div>
+              <div class="form-group">
+                <label>জমা দিচ্ছেন (টাকা)</label>
+                <input type="number" name="paidAmount" min="0" max="${p.delegateFee}" placeholder="0" id="paid-input">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>বকেয়া থাকবে</label>
+              <input type="text" id="due-display" readonly value="${formatTaka(p.delegateFee)}" style="background:var(--cream-dark); color:var(--red); font-weight:700;">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" id="submit-btn" disabled>সীট নির্বাচন করুন</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  renderVehicles();
+
+  const paidInput = qs('#paid-input');
+  paidInput.addEventListener('input', () => {
+    const due = Math.max(0, p.delegateFee - (Number(paidInput.value) || 0));
+    qs('#due-display').value = formatTaka(due);
+  });
+
+  qs('#booking-form').addEventListener('submit', submitBooking);
+
+  // মোবাইলে গ্রিড এক কলামে
+  if (window.innerWidth < 860) {
+    qs('#booking-grid').style.gridTemplateColumns = '1fr';
+  }
+}
+
+function renderVehicles() {
+  const container = qs('#vehicle-list');
+  const vehicles = currentPackage.vehicles || [];
+
+  if (vehicles.length === 0) {
+    container.innerHTML = '<div class="empty-state">এই প্যাকেজে কোনো গাড়ি যুক্ত করা হয়নি।</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="seat-legend">
+      <span><span class="legend-dot available"></span> খালি</span>
+      <span><span class="legend-dot selected"></span> আপনার নির্বাচন</span>
+      <span><span class="legend-dot held"></span> হোল্ড করা</span>
+      <span><span class="legend-dot booked"></span> বুক হয়ে গেছে</span>
+    </div>
+  ` + vehicles.map(v => {
+    const vSeats = currentSeats.filter(s => s.vehicleName === v.name);
+    const availableCount = vSeats.filter(s => s.status === 'available').length;
+    return `
+      <div class="vehicle-block">
+        <div class="vehicle-header">
+          <span>${escapeHtml(v.name)} · ${escapeHtml(v.type || '')}</span>
+          <span class="text-muted" style="font-weight:500; font-size:0.85rem;">${toBengaliNumber(availableCount)}/${toBengaliNumber(vSeats.length)} খালি</span>
+        </div>
+        <div class="seat-grid">
+          ${vSeats.map(s => renderSeat(v.name, s)).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  qsa('.seat', container).forEach(el => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('seat-booked') || el.classList.contains('seat-held')) return;
+      selectSeat(el.dataset.vehicle, el.dataset.seat);
+    });
+  });
+}
+
+function renderSeat(vehicleName, seat) {
+  let cls = 'seat-available';
+  if (seat.status === 'booked') cls = 'seat-booked';
+  else if (seat.status === 'held') cls = 'seat-held';
+  if (selectedVehicle === vehicleName && selectedSeat === seat.seatNo) cls = 'seat-selected';
+
+  return `<div class="seat ${cls}" data-vehicle="${escapeHtml(vehicleName)}" data-seat="${escapeHtml(seat.seatNo)}">${escapeHtml(seat.seatNo)}</div>`;
+}
+
+function selectSeat(vehicleName, seatNo) {
+  selectedVehicle = vehicleName;
+  selectedSeat = seatNo;
+  renderVehicles();
+  qs('#selected-seat-display').value = vehicleName + ' — সীট ' + seatNo;
+  const btn = qs('#submit-btn');
+  btn.disabled = false;
+  btn.textContent = 'বুকিং সাবমিট করুন';
+}
+
+async function submitBooking(e) {
+  e.preventDefault();
+  if (!selectedSeat) {
+    showToast('অনুগ্রহ করে একটি সীট নির্বাচন করুন', 'error');
+    return;
+  }
+
+  const form = e.target;
+  const btn = qs('#submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'সাবমিট হচ্ছে...';
+
+  const fd = new FormData(form);
+  const paidAmount = Number(fd.get('paidAmount')) || 0;
+
+  try {
+    const res = await apiPost('createBooking', {
+      packageId: currentPackage.id,
+      date: new Date().toISOString().split('T')[0],
+      name: fd.get('name'),
+      mobile: fd.get('mobile'),
+      address: fd.get('address'),
+      vehicleName: selectedVehicle,
+      seatNo: selectedSeat,
+      delegateFee: currentPackage.delegateFee,
+      paidAmount
+    });
+
+    if (!res.ok) {
+      showToast(res.error || 'বুকিং ব্যর্থ হয়েছে', 'error');
+      btn.disabled = false;
+      btn.textContent = 'বুকিং সাবমিট করুন';
+      // সিট রিফ্রেশ করা, কারণ হয়তো অন্য কেউ নিয়ে নিয়েছে
+      const seatRes = await apiGet('getSeats', { packageId: currentPackage.id });
+      currentSeats = seatRes.ok ? seatRes.data : [];
+      selectedSeat = null;
+      renderVehicles();
+      return;
+    }
+
+    qs('#page-content').innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:3rem;">✅</div>
+        <h2>বুকিং সফল হয়েছে!</h2>
+        <p>ক্রম নং <strong>${toBengaliNumber(res.data.serial)}</strong> — এডমিন কনফার্ম করলে আপনার বুকিং নিশ্চিত হবে।</p>
+        <p class="text-muted">বকেয়া: ${formatTaka(res.data.dueAmount)}</p>
+        <a href="index.html" class="btn btn-forest" style="margin-top:16px;">অন্যান্য প্যাকেজ দেখুন</a>
+      </div>
+    `;
+  } catch (err) {
+    showToast('একটি ত্রুটি হয়েছে: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'বুকিং সাবমিট করুন';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
