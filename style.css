@@ -59,6 +59,15 @@ button, input, select, textarea {
   padding: 0 20px;
 }
 
+.top-strip {
+  background: var(--gold);
+  color: var(--forest-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 7px 0;
+  text-align: center;
+}
+
 .site-header {
   background: var(--forest-dark);
   color: var(--cream);
@@ -555,3 +564,62 @@ tbody tr:hover { background: var(--cream); }
 .mt-24 { margin-top: 24px; }
 .text-muted { color: var(--ink-soft); }
 .text-center { text-align: center; }
+.btn-outline-forest { background: transparent; border: 1.5px solid var(--forest); color: var(--forest); }
+.btn-outline-forest:hover { background: var(--forest); color: white; }
+
+/* ---------- টিকেট কার্ড ---------- */
+
+.ticket-card {
+  background: white;
+  border: 2px dashed var(--gold);
+  border-radius: var(--radius);
+  max-width: 480px;
+  margin: 0 auto 28px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.ticket-header {
+  background: linear-gradient(135deg, var(--forest), var(--forest-light));
+  color: var(--cream);
+  padding: 16px 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ticket-group-name { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+.ticket-status { background: var(--gold); color: var(--forest-dark); padding: 4px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; }
+.ticket-body { padding: 18px 22px; }
+.ticket-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 0.92rem; }
+.ticket-row:last-child { border-bottom: none; }
+.ticket-row span { color: var(--ink-soft); }
+.ticket-footer {
+  background: var(--cream-dark);
+  padding: 12px 22px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--forest-dark);
+}
+.ticket-credit { font-size: 0.72rem; font-weight: 500; opacity: 0.7; margin-top: 2px; }
+
+/* ---------- প্রিন্ট স্টাইল ---------- */
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  .ticket-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none; margin-bottom: 20px; }
+  .admin-shell, .admin-sidebar { display: none !important; }
+  .print-only { display: block !important; }
+  table { font-size: 0.8rem; }
+}
+
+.print-only { display: none; }
+
+.print-sheet-header {
+  text-align: center;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--forest);
+}
+.print-sheet-header h2 { margin: 0 0 4px; }
+.print-sheet-header .admin-line { font-size: 0.85rem; color: var(--ink-soft); }

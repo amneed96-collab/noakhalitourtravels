@@ -1,17 +1,7 @@
 /**
  * ============================================================
- *  ট্যুর ম্যানেজমেন্ট সিস্টেম - Google Apps Script ব্যাকএন্ড
+ *  ট্যুর ম্যানেজমেন্ট সিস্টেম - Google Apps Script ব্যাকএন্ড (v2)
  * ============================================================
- *
- * সেটআপ নির্দেশনা (README.md ফাইলে বিস্তারিত আছে):
- * 1. একটি নতুন Google Sheet তৈরি করুন
- * 2. Extensions > Apps Script এ যান
- * 3. এই কোডটি Code.gs এ পেস্ট করুন
- * 4. setupSheets() ফাংশনটি একবার রান করুন (শীট ও হেডার তৈরি হবে)
- * 5. Deploy > New deployment > Web app হিসেবে ডিপ্লয় করুন
- *    - Execute as: Me
- *    - Who has access: Anyone
- * 6. যে URL পাবেন সেটি ফ্রন্টএন্ডের config.js এ বসান
  */
 
 const SHEET_NAMES = {
@@ -27,9 +17,7 @@ const SHEET_NAMES = {
 function getSheet(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-  }
+  if (!sheet) sheet = ss.insertSheet(name);
   return sheet;
 }
 
@@ -41,8 +29,7 @@ function sheetToObjects(sheet) {
   const data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
   const headers = data[0];
-  const rows = data.slice(1);
-  return rows
+  return data.slice(1)
     .filter(row => row.some(cell => cell !== '' && cell !== null))
     .map(row => {
       const obj = {};
@@ -59,7 +46,6 @@ function jsonResponse(obj) {
 // ---------- প্রাথমিক সেটআপ (একবার চালান) ----------
 
 function setupSheets() {
-  // Packages
   const pkg = getSheet(SHEET_NAMES.PACKAGES);
   pkg.clear();
   pkg.appendRow([
@@ -68,30 +54,22 @@ function setupSheets() {
     'createdAt', 'slug', 'coverNote'
   ]);
 
-  // Bookings
   const bk = getSheet(SHEET_NAMES.BOOKINGS);
   bk.clear();
   bk.appendRow([
     'id', 'packageId', 'serial', 'date', 'name', 'mobile', 'address',
-    'vehicleName', 'seatNo', 'delegateFee', 'paidAmount', 'dueAmount',
+    'seatsJson', 'delegateFee', 'paidAmount', 'dueAmount',
     'status', 'createdAt', 'confirmedBy', 'confirmedAt'
   ]);
 
-  // Seats (প্রতিটি প্যাকেজের প্রতিটি গাড়ির প্রতিটি সিট)
   const st = getSheet(SHEET_NAMES.SEATS);
   st.clear();
-  st.appendRow([
-    'packageId', 'vehicleName', 'seatNo', 'status', 'bookingId', 'holdNote'
-  ]);
+  st.appendRow(['packageId', 'vehicleName', 'seatNo', 'status', 'bookingId', 'holdNote']);
 
-  // Expenses
   const ex = getSheet(SHEET_NAMES.EXPENSES);
   ex.clear();
-  ex.appendRow([
-    'id', 'packageId', 'title', 'category', 'amount', 'note', 'date', 'addedBy', 'createdAt'
-  ]);
+  ex.appendRow(['id', 'packageId', 'title', 'category', 'amount', 'note', 'date', 'addedBy', 'createdAt']);
 
-  // Admins - ডিফল্ট এডমিন (অবশ্যই পরে পাসওয়ার্ড পরিবর্তন করুন)
   const ad = getSheet(SHEET_NAMES.ADMINS);
   ad.clear();
   ad.appendRow(['username', 'password', 'role', 'name', 'active']);
@@ -109,10 +87,14 @@ function doGet(e) {
   const action = e.parameter.action;
   try {
     switch (action) {
+      case 'getPackagesSummary':
+        return jsonResponse({ ok: true, data: getPackagesSummary() });
       case 'getPackages':
         return jsonResponse({ ok: true, data: getPackages() });
       case 'getPackage':
         return jsonResponse({ ok: true, data: getPackageDetail(e.parameter.id) });
+      case 'getPackageFull':
+        return jsonResponse({ ok: true, data: getPackageFull(e.parameter.id) });
       case 'getSeats':
         return jsonResponse({ ok: true, data: getSeatsForPackage(e.parameter.packageId) });
       case 'getBookings':
@@ -123,6 +105,8 @@ function doGet(e) {
         return jsonResponse({ ok: true, data: getFinanceReport(e.parameter.packageId) });
       case 'getOverallReport':
         return jsonResponse({ ok: true, data: getOverallReport() });
+      case 'findTickets':
+        return jsonResponse({ ok: true, data: findTickets(e.parameter.name, e.parameter.mobile) });
       default:
         return jsonResponse({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -140,6 +124,8 @@ function doPost(e) {
         return jsonResponse(login(body.username, body.password));
       case 'createPackage':
         return jsonResponse({ ok: true, data: createPackage(body) });
+      case 'updatePackage':
+        return jsonResponse(updatePackage(body));
       case 'createBooking':
         return jsonResponse(createBooking(body));
       case 'confirmBooking':
@@ -168,20 +154,13 @@ function doPost(e) {
   }
 }
 
-// ---------- লগইন ----------
+// ---------- লগইন / এডমিন ----------
 
 function login(username, password) {
   const admins = sheetToObjects(getSheet(SHEET_NAMES.ADMINS));
-  const found = admins.find(
-    a => a.username === username && String(a.password) === String(password) && a.active
-  );
-  if (!found) {
-    return { ok: false, error: 'ইউজারনেম বা পাসওয়ার্ড ভুল, অথবা একাউন্ট নিষ্ক্রিয়।' };
-  }
-  return {
-    ok: true,
-    data: { username: found.username, role: found.role, name: found.name }
-  };
+  const found = admins.find(a => a.username === username && String(a.password) === String(password) && a.active);
+  if (!found) return { ok: false, error: 'ইউজারনেম বা পাসওয়ার্ড ভুল, অথবা একাউন্ট নিষ্ক্রিয়।' };
+  return { ok: true, data: { username: found.username, role: found.role, name: found.name } };
 }
 
 function getAdmins() {
@@ -191,7 +170,6 @@ function getAdmins() {
 }
 
 function manageAdmin(body) {
-  // body: {mode: 'add'|'edit'|'delete', username, password, role, name, active}
   const sheet = getSheet(SHEET_NAMES.ADMINS);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -201,13 +179,9 @@ function manageAdmin(body) {
     sheet.appendRow([body.username, body.password, body.role, body.name, true]);
     return { ok: true };
   }
-
   for (let i = 1; i < data.length; i++) {
     if (data[i][usernameCol] === body.username) {
-      if (body.mode === 'delete') {
-        sheet.deleteRow(i + 1);
-        return { ok: true };
-      }
+      if (body.mode === 'delete') { sheet.deleteRow(i + 1); return { ok: true }; }
       if (body.mode === 'edit') {
         if (body.password) sheet.getRange(i + 1, headers.indexOf('password') + 1).setValue(body.password);
         if (body.role) sheet.getRange(i + 1, headers.indexOf('role') + 1).setValue(body.role);
@@ -223,9 +197,7 @@ function manageAdmin(body) {
 // ---------- প্যাকেজ ----------
 
 function slugify(text, id) {
-  const base = text
-    .toString()
-    .trim()
+  const base = text.toString().trim()
     .replace(/[^\w\u0980-\u09FF\s-]/g, '')
     .replace(/\s+/g, '-')
     .toLowerCase();
@@ -236,45 +208,80 @@ function createPackage(body) {
   const sheet = getSheet(SHEET_NAMES.PACKAGES);
   const id = generateId('PKG');
   const slug = slugify(body.spotName, id);
-
-  // vehicles: [{name: 'Bus-1', type:'বাস', seatCount: 40}, ...]
   const vehicles = body.vehicles || [];
 
   sheet.appendRow([
-    id,
-    body.spotName,
-    body.startDate,
-    body.endDate,
-    body.totalDays,
-    body.delegateCount,
-    body.delegateFee,
-    JSON.stringify(vehicles),
-    'active',
-    new Date().toISOString(),
-    slug,
-    body.coverNote || ''
+    id, body.spotName, body.startDate, body.endDate, body.totalDays,
+    body.delegateCount, body.delegateFee, JSON.stringify(vehicles), 'active',
+    new Date().toISOString(), slug, body.coverNote || ''
   ]);
 
-  // প্রতিটি গাড়ির জন্য সিট তৈরি করা
+  addSeatsForVehicles(id, vehicles);
+  return { id, slug };
+}
+
+function addSeatsForVehicles(packageId, vehicles) {
   const seatSheet = getSheet(SHEET_NAMES.SEATS);
+  const existing = sheetToObjects(seatSheet).filter(s => s.packageId === packageId);
+  const existingVehicleNames = new Set(existing.map(s => s.vehicleName));
   const rows = [];
+  const rowLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const seatsPerRow = 4;
+
   vehicles.forEach(v => {
-    const rowLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const seatsPerRow = 4; // A1-A4, B1-B4 প্যাটার্ন অনুযায়ী
+    if (existingVehicleNames.has(v.name)) return; // আগে থেকে থাকা গাড়ির সীট আবার তৈরি হবে না
     for (let i = 0; i < v.seatCount; i++) {
       const rowIdx = Math.floor(i / seatsPerRow);
       const seatIdx = (i % seatsPerRow) + 1;
       const seatNo = rowLetters[rowIdx] + seatIdx;
-      rows.push([id, v.name, seatNo, 'available', '', '']);
+      rows.push([packageId, v.name, seatNo, 'available', '', '']);
     }
   });
   if (rows.length > 0) {
-    seatSheet
-      .getRange(seatSheet.getLastRow() + 1, 1, rows.length, 6)
-      .setValues(rows);
+    seatSheet.getRange(seatSheet.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
   }
+}
 
-  return { id, slug };
+function updatePackage(body) {
+  const sheet = getSheet(SHEET_NAMES.PACKAGES);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('id');
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idCol] === body.id) {
+      const row = i + 1;
+      const setIf = (field, value) => {
+        if (value !== undefined && value !== null && value !== '') {
+          sheet.getRange(row, headers.indexOf(field) + 1).setValue(value);
+        }
+      };
+      setIf('spotName', body.spotName);
+      setIf('startDate', body.startDate);
+      setIf('endDate', body.endDate);
+      setIf('totalDays', body.totalDays);
+      setIf('delegateCount', body.delegateCount);
+      setIf('delegateFee', body.delegateFee);
+      setIf('coverNote', body.coverNote);
+      setIf('status', body.status);
+
+      if (body.vehicles && body.vehicles.length > 0) {
+        const oldVehicles = JSON.parse(data[i][headers.indexOf('vehicles')] || '[]');
+        const merged = mergeVehicles(oldVehicles, body.vehicles);
+        sheet.getRange(row, headers.indexOf('vehicles') + 1).setValue(JSON.stringify(merged));
+        addSeatsForVehicles(body.id, merged); // নতুন গাড়ির জন্য সীট তৈরি (পুরনো গাড়ি অপরিবর্তিত থাকবে)
+      }
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: 'প্যাকেজ পাওয়া যায়নি' };
+}
+
+function mergeVehicles(oldList, newList) {
+  const map = {};
+  oldList.forEach(v => (map[v.name] = v));
+  newList.forEach(v => (map[v.name] = v)); // নতুন তথ্য দিয়ে ওভাররাইট বা যোগ
+  return Object.values(map);
 }
 
 function getPackages() {
@@ -284,19 +291,36 @@ function getPackages() {
   });
 }
 
+// একটি কল দিয়ে সব প্যাকেজ + সীট সামারি (হোমপেজের জন্য ফাস্ট)
+function getPackagesSummary() {
+  const packages = getPackages();
+  const allSeats = sheetToObjects(getSheet(SHEET_NAMES.SEATS));
+  return packages.map(p => {
+    const seats = allSeats.filter(s => s.packageId === p.id);
+    const taken = seats.filter(s => s.status !== 'available').length;
+    p.totalSeats = seats.length;
+    p.availableSeats = seats.length - taken;
+    return p;
+  });
+}
+
 function getPackageDetail(idOrSlug) {
   const packages = getPackages();
   const pkg = packages.find(p => p.id === idOrSlug || p.slug === idOrSlug);
   if (!pkg) return null;
-
   const seats = getSeatsForPackage(pkg.id);
-  const totalSeats = seats.length;
-  const bookedSeats = seats.filter(s => s.status === 'booked').length;
-  const heldSeats = seats.filter(s => s.status === 'held').length;
-
-  pkg.totalSeats = totalSeats;
-  pkg.availableSeats = totalSeats - bookedSeats - heldSeats;
+  const total = seats.length;
+  const taken = seats.filter(s => s.status !== 'available').length;
+  pkg.totalSeats = total;
+  pkg.availableSeats = total - taken;
   return pkg;
+}
+
+// একটি কল দিয়ে প্যাকেজ + সীট (বুকিং পেজের জন্য ফাস্ট)
+function getPackageFull(idOrSlug) {
+  const pkg = getPackageDetail(idOrSlug);
+  if (!pkg) return null;
+  return { package: pkg, seats: getSeatsForPackage(pkg.id) };
 }
 
 // ---------- সিট ----------
@@ -305,16 +329,14 @@ function getSeatsForPackage(packageId) {
   return sheetToObjects(getSheet(SHEET_NAMES.SEATS)).filter(s => s.packageId === packageId);
 }
 
-function findSeatRow(sheet, packageId, vehicleName, seatNo) {
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
+function findSeatRow(sheet, data, headers, packageId, vehicleName, seatNo) {
   for (let i = 1; i < data.length; i++) {
     if (
       data[i][headers.indexOf('packageId')] === packageId &&
       data[i][headers.indexOf('vehicleName')] === vehicleName &&
       data[i][headers.indexOf('seatNo')] === seatNo
     ) {
-      return { rowIndex: i + 1, headers };
+      return i + 1;
     }
   }
   return null;
@@ -322,19 +344,20 @@ function findSeatRow(sheet, packageId, vehicleName, seatNo) {
 
 function holdSeats(packageId, vehicleName, seats, holdNote) {
   const sheet = getSheet(SHEET_NAMES.SEATS);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
   const results = [];
   seats.forEach(seatNo => {
-    const found = findSeatRow(sheet, packageId, vehicleName, seatNo);
-    if (found) {
-      const statusCol = found.headers.indexOf('status') + 1;
-      const noteCol = found.headers.indexOf('holdNote') + 1;
-      const currentStatus = sheet.getRange(found.rowIndex, statusCol).getValue();
+    const rowIndex = findSeatRow(sheet, data, headers, packageId, vehicleName, seatNo);
+    if (rowIndex) {
+      const statusCol = headers.indexOf('status') + 1;
+      const currentStatus = sheet.getRange(rowIndex, statusCol).getValue();
       if (currentStatus === 'available') {
-        sheet.getRange(found.rowIndex, statusCol).setValue('held');
-        sheet.getRange(found.rowIndex, noteCol).setValue(holdNote || 'এডমিন হোল্ড');
+        sheet.getRange(rowIndex, statusCol).setValue('held');
+        sheet.getRange(rowIndex, headers.indexOf('holdNote') + 1).setValue(holdNote || 'এডমিন হোল্ড');
         results.push({ seatNo, ok: true });
       } else {
-        results.push({ seatNo, ok: false, reason: 'ইতিমধ্যে ' + currentStatus });
+        results.push({ seatNo, ok: false });
       }
     }
   });
@@ -343,35 +366,47 @@ function holdSeats(packageId, vehicleName, seats, holdNote) {
 
 function releaseSeat(packageId, vehicleName, seatNo) {
   const sheet = getSheet(SHEET_NAMES.SEATS);
-  const found = findSeatRow(sheet, packageId, vehicleName, seatNo);
-  if (!found) return { ok: false, error: 'সিট পাওয়া যায়নি' };
-  const statusCol = found.headers.indexOf('status') + 1;
-  const bookingCol = found.headers.indexOf('bookingId') + 1;
-  const noteCol = found.headers.indexOf('holdNote') + 1;
-  sheet.getRange(found.rowIndex, statusCol).setValue('available');
-  sheet.getRange(found.rowIndex, bookingCol).setValue('');
-  sheet.getRange(found.rowIndex, noteCol).setValue('');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const rowIndex = findSeatRow(sheet, data, headers, packageId, vehicleName, seatNo);
+  if (!rowIndex) return { ok: false, error: 'সিট পাওয়া যায়নি' };
+  sheet.getRange(rowIndex, headers.indexOf('status') + 1).setValue('available');
+  sheet.getRange(rowIndex, headers.indexOf('bookingId') + 1).setValue('');
+  sheet.getRange(rowIndex, headers.indexOf('holdNote') + 1).setValue('');
   return { ok: true };
 }
 
-// ---------- বুকিং ----------
+// ---------- বুকিং (একাধিক সীট সাপোর্ট সহ) ----------
 
 function getBookings(packageId) {
-  const all = sheetToObjects(getSheet(SHEET_NAMES.BOOKINGS));
+  const all = sheetToObjects(getSheet(SHEET_NAMES.BOOKINGS)).map(b => {
+    b.seats = JSON.parse(b.seatsJson || '[]');
+    return b;
+  });
   if (packageId) return all.filter(b => b.packageId === packageId);
   return all;
 }
 
+// body.seats = [{vehicleName, seatNo}, ...]  একাধিক সীট একসাথে বুক করা যাবে
 function createBooking(body) {
   const seatSheet = getSheet(SHEET_NAMES.SEATS);
-  const found = findSeatRow(seatSheet, body.packageId, body.vehicleName, body.seatNo);
+  const seatData = seatSheet.getDataRange().getValues();
+  const seatHeaders = seatData[0];
+  const statusCol = seatHeaders.indexOf('status') + 1;
+  const bookingCol = seatHeaders.indexOf('bookingId') + 1;
 
-  if (!found) return { ok: false, error: 'সিট পাওয়া যায়নি' };
+  const requestedSeats = body.seats || [{ vehicleName: body.vehicleName, seatNo: body.seatNo }];
 
-  const statusCol = found.headers.indexOf('status') + 1;
-  const currentStatus = seatSheet.getRange(found.rowIndex, statusCol).getValue();
-  if (currentStatus !== 'available') {
-    return { ok: false, error: 'দুঃখিত, সিট ' + body.seatNo + ' ইতিমধ্যে বুক/হোল্ড করা আছে। অন্য সিট বেছে নিন।' };
+  // প্রথমে সব সীট খালি আছে কিনা যাচাই
+  const rowIndexes = [];
+  for (const s of requestedSeats) {
+    const rowIndex = findSeatRow(seatSheet, seatData, seatHeaders, body.packageId, s.vehicleName, s.seatNo);
+    if (!rowIndex) return { ok: false, error: 'সিট ' + s.seatNo + ' পাওয়া যায়নি' };
+    const currentStatus = seatData[rowIndex - 1][seatHeaders.indexOf('status')];
+    if (currentStatus !== 'available') {
+      return { ok: false, error: 'দুঃখিত, সিট ' + s.seatNo + ' ইতিমধ্যে বুক/হোল্ড করা আছে। পেজ রিফ্রেশ করে আবার চেষ্টা করুন।' };
+    }
+    rowIndexes.push(rowIndex);
   }
 
   const bookingSheet = getSheet(SHEET_NAMES.BOOKINGS);
@@ -379,35 +414,23 @@ function createBooking(body) {
   const existingCount = getBookings(body.packageId).length;
   const serial = existingCount + 1;
 
-  const delegateFee = Number(body.delegateFee) || 0;
+  const perSeatFee = Number(body.delegateFee) || 0;
+  const totalFee = perSeatFee * requestedSeats.length;
   const paidAmount = Number(body.paidAmount) || 0;
-  const dueAmount = delegateFee - paidAmount;
+  const dueAmount = totalFee - paidAmount;
 
   bookingSheet.appendRow([
-    id,
-    body.packageId,
-    serial,
-    body.date,
-    body.name,
-    body.mobile,
-    body.address,
-    body.vehicleName,
-    body.seatNo,
-    delegateFee,
-    paidAmount,
-    dueAmount,
-    'pending', // pending -> confirmed
-    new Date().toISOString(),
-    '',
-    ''
+    id, body.packageId, serial, body.date, body.name, body.mobile, body.address,
+    JSON.stringify(requestedSeats), totalFee, paidAmount, dueAmount,
+    'pending', new Date().toISOString(), '', ''
   ]);
 
-  // সিট 'held' করে দেওয়া হলো (কনফার্ম না হওয়া পর্যন্ত)
-  const bookingCol = found.headers.indexOf('bookingId') + 1;
-  seatSheet.getRange(found.rowIndex, statusCol).setValue('held');
-  seatSheet.getRange(found.rowIndex, bookingCol).setValue(id);
+  rowIndexes.forEach(rowIndex => {
+    seatSheet.getRange(rowIndex, statusCol).setValue('held');
+    seatSheet.getRange(rowIndex, bookingCol).setValue(id);
+  });
 
-  return { ok: true, data: { id, serial, dueAmount } };
+  return { ok: true, data: { id, serial, dueAmount, seatCount: requestedSeats.length, totalFee } };
 }
 
 function confirmBooking(bookingId, confirmedBy) {
@@ -424,16 +447,15 @@ function confirmBooking(bookingId, confirmedBy) {
       sheet.getRange(row, headers.indexOf('confirmedAt') + 1).setValue(new Date().toISOString());
 
       const packageId = data[i][headers.indexOf('packageId')];
-      const vehicleName = data[i][headers.indexOf('vehicleName')];
-      const seatNo = data[i][headers.indexOf('seatNo')];
+      const seats = JSON.parse(data[i][headers.indexOf('seatsJson')] || '[]');
 
       const seatSheet = getSheet(SHEET_NAMES.SEATS);
-      const found = findSeatRow(seatSheet, packageId, vehicleName, seatNo);
-      if (found) {
-        seatSheet
-          .getRange(found.rowIndex, found.headers.indexOf('status') + 1)
-          .setValue('booked');
-      }
+      const seatData = seatSheet.getDataRange().getValues();
+      const seatHeaders = seatData[0];
+      seats.forEach(s => {
+        const rowIndex = findSeatRow(seatSheet, seatData, seatHeaders, packageId, s.vehicleName, s.seatNo);
+        if (rowIndex) seatSheet.getRange(rowIndex, seatHeaders.indexOf('status') + 1).setValue('booked');
+      });
       return { ok: true };
     }
   }
@@ -450,11 +472,9 @@ function cancelBooking(bookingId) {
     if (data[i][idCol] === bookingId) {
       const row = i + 1;
       sheet.getRange(row, headers.indexOf('status') + 1).setValue('cancelled');
-
       const packageId = data[i][headers.indexOf('packageId')];
-      const vehicleName = data[i][headers.indexOf('vehicleName')];
-      const seatNo = data[i][headers.indexOf('seatNo')];
-      releaseSeat(packageId, vehicleName, seatNo);
+      const seats = JSON.parse(data[i][headers.indexOf('seatsJson')] || '[]');
+      seats.forEach(s => releaseSeat(packageId, s.vehicleName, s.seatNo));
       return { ok: true };
     }
   }
@@ -480,6 +500,30 @@ function updatePayment(bookingId, paidAmount) {
   return { ok: false, error: 'বুকিং পাওয়া যায়নি' };
 }
 
+// ---------- টিকেট লুকআপ (নাম + মোবাইল দিয়ে) ----------
+
+function findTickets(name, mobile) {
+  const bookings = getBookings().filter(b => b.status === 'confirmed');
+  const packages = getPackages();
+  const pkgMap = {};
+  packages.forEach(p => (pkgMap[p.id] = p));
+
+  const matches = bookings.filter(b => {
+    const nameMatch = name ? b.name.toString().trim().toLowerCase().includes(name.trim().toLowerCase()) : true;
+    const mobileMatch = mobile ? b.mobile.toString().trim() === mobile.trim() : true;
+    return nameMatch && mobileMatch;
+  });
+
+  return matches.map(b => ({
+    ...b,
+    packageInfo: pkgMap[b.packageId] ? {
+      spotName: pkgMap[b.packageId].spotName,
+      startDate: pkgMap[b.packageId].startDate,
+      endDate: pkgMap[b.packageId].endDate
+    } : null
+  }));
+}
+
 // ---------- খরচ ----------
 
 function getExpenses(packageId) {
@@ -492,15 +536,9 @@ function addExpense(body) {
   const sheet = getSheet(SHEET_NAMES.EXPENSES);
   const id = generateId('EXP');
   sheet.appendRow([
-    id,
-    body.packageId,
-    body.title,
-    body.category || 'অন্যান্য',
-    Number(body.amount) || 0,
-    body.note || '',
-    body.date || new Date().toISOString().split('T')[0],
-    body.addedBy || '',
-    new Date().toISOString()
+    id, body.packageId, body.title, body.category || 'অন্যান্য',
+    Number(body.amount) || 0, body.note || '', body.date || new Date().toISOString().split('T')[0],
+    body.addedBy || '', new Date().toISOString()
   ]);
   return { id };
 }
@@ -509,10 +547,7 @@ function deleteExpense(id) {
   const sheet = getSheet(SHEET_NAMES.EXPENSES);
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === id) {
-      sheet.deleteRow(i + 1);
-      return { ok: true };
-    }
+    if (data[i][0] === id) { sheet.deleteRow(i + 1); return { ok: true }; }
   }
   return { ok: false, error: 'পাওয়া যায়নি' };
 }
@@ -533,10 +568,7 @@ function getFinanceReport(packageId) {
     totalBookings: bookings.length,
     confirmedBookings: bookings.filter(b => b.status === 'confirmed').length,
     pendingBookings: bookings.filter(b => b.status === 'pending').length,
-    totalExpected,
-    totalIncome,
-    totalDue,
-    totalExpense,
+    totalExpected, totalIncome, totalDue, totalExpense,
     netProfit: totalIncome - totalExpense,
     expenses
   };
@@ -552,25 +584,21 @@ function getOverallReport() {
   const totalExpense = allExpenses.reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
 
   const perPackage = packages.map(p => {
-    const r = getFinanceReport(p.id);
+    const pBookings = allBookings.filter(b => b.packageId === p.id);
+    const pExpenses = allExpenses.filter(x => x.packageId === p.id);
+    const income = pBookings.reduce((s, b) => s + (Number(b.paidAmount) || 0), 0);
+    const due = pBookings.reduce((s, b) => s + (Number(b.dueAmount) || 0), 0);
+    const expense = pExpenses.reduce((s, x) => s + (Number(x.amount) || 0), 0);
     return {
-      packageId: p.id,
-      spotName: p.spotName,
-      totalIncome: r.totalIncome,
-      totalExpense: r.totalExpense,
-      netProfit: r.netProfit,
-      totalDue: r.totalDue,
-      bookings: r.totalBookings
+      packageId: p.id, spotName: p.spotName,
+      totalIncome: income, totalExpense: expense,
+      netProfit: income - expense, totalDue: due, bookings: pBookings.length
     };
   });
 
   return {
-    totalPackages: packages.length,
-    totalBookings: allBookings.length,
-    totalIncome,
-    totalDue,
-    totalExpense,
-    netProfit: totalIncome - totalExpense,
+    totalPackages: packages.length, totalBookings: allBookings.length,
+    totalIncome, totalDue, totalExpense, netProfit: totalIncome - totalExpense,
     perPackage
   };
 }

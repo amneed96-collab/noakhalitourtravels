@@ -8,17 +8,24 @@
 </head>
 <body>
 
+<div class="top-strip">
+  <div class="container flex-between">
+    <span class="js-header-admin-line">এডমিন- রবিউল হক ওয়াসিম: 01648-093805</span>
+  </div>
+</div>
+
 <header class="site-header">
   <div class="container">
     <div class="brand">
       <div class="brand-mark">🧳</div>
       <div>
-        <div class="brand-name" id="header-group-name">ভ্রমণসঙ্গী ট্যুর গ্রুপ</div>
-        <div class="brand-tagline" id="header-tagline">বাংলাদেশ ঘুরে দেখি, একসাথে</div>
+        <div class="brand-name js-group-name">নোয়াখালী ট্যুর ট্রাভেল্স</div>
+        <div class="brand-tagline js-tagline">বাংলাদেশ ঘুরে দেখি, একসাথে</div>
       </div>
     </div>
     <nav class="header-nav">
       <a href="index.html">প্যাকেজ সমূহ</a>
+      <a href="ticket.html">টিকেট দেখুন</a>
       <a href="admin.html">এডমিন লগইন</a>
     </nav>
   </div>
@@ -38,18 +45,16 @@
       <h2>চলতি ও আসন্ন ট্যুর প্যাকেজ</h2>
       <p>আসন সীমিত, তাই দ্রুত বুকিং নিশ্চিত করুন</p>
     </div>
-
-    <div id="pkg-list">
-      <div class="spinner"></div>
-    </div>
+    <div id="pkg-list"><div class="spinner"></div></div>
   </div>
 </section>
 
 <footer class="site-footer">
   <div class="container">
-    <div id="footer-group-name">ভ্রমণসঙ্গী ট্যুর গ্রুপ</div>
+    <div class="js-group-name">নোয়াখালী ট্যুর ট্রাভেল্স</div>
     <div class="social-links" id="social-links"></div>
-    <div style="margin-top:14px; opacity:0.7;">© <span id="year"></span> সর্বস্বত্ব সংরক্ষিত</div>
+    <div style="margin-top:14px; opacity:0.8; font-weight:600;" class="js-footer-line">@AMShahed: 01605721296</div>
+    <div style="margin-top:6px; opacity:0.6; font-size:0.8rem;">© <span id="year"></span> সর্বস্বত্ব সংরক্ষিত</div>
   </div>
 </footer>
 
@@ -57,9 +62,6 @@
 <script src="api.js"></script>
 <script>
 qs('#year').textContent = new Date().getFullYear();
-qs('#header-group-name').textContent = SITE_CONFIG.groupName;
-qs('#footer-group-name').textContent = SITE_CONFIG.groupName;
-qs('#header-tagline').textContent = SITE_CONFIG.tagline;
 
 if (SITE_CONFIG.facebookUrl) {
   const social = qs('#social-links');
@@ -73,7 +75,8 @@ if (SITE_CONFIG.facebookUrl) {
 async function loadPackages() {
   const listEl = qs('#pkg-list');
   try {
-    const res = await apiGet('getPackages');
+    // একটাই API কল - সব প্যাকেজ ও সীট সামারি একসাথে (দ্রুত লোড)
+    const res = await apiGet('getPackagesSummary');
     if (!res.ok) throw new Error(res.error);
     const packages = res.data.filter(p => p.status === 'active');
 
@@ -81,24 +84,13 @@ async function loadPackages() {
       listEl.innerHTML = '<div class="empty-state">এই মুহূর্তে কোনো সক্রিয় ট্যুর প্যাকেজ নেই। শীঘ্রই নতুন প্যাকেজ আসছে!</div>';
       return;
     }
-
-    // প্রতিটি প্যাকেজের সিট তথ্য আনা
-    const withSeats = await Promise.all(packages.map(async p => {
-      const seatRes = await apiGet('getSeats', { packageId: p.id });
-      const seats = seatRes.ok ? seatRes.data : [];
-      const total = seats.length;
-      const taken = seats.filter(s => s.status !== 'available').length;
-      return { ...p, totalSeats: total, availableSeats: total - taken };
-    }));
-
-    listEl.innerHTML = '<div class="pkg-grid">' + withSeats.map(renderCard).join('') + '</div>';
+    listEl.innerHTML = '<div class="pkg-grid">' + packages.map(renderCard).join('') + '</div>';
   } catch (err) {
     listEl.innerHTML = '<div class="empty-state">লোড করতে সমস্যা হয়েছে: ' + err.message + '<br><br><span class="text-muted">নিশ্চিত করুন config.js এ সঠিক API_URL বসানো আছে।</span></div>';
   }
 }
 
 function renderCard(p) {
-  const totalVehicles = p.vehicles.length;
   const vehicleSummary = p.vehicles.map(v => v.name + ' (' + toBengaliNumber(v.seatCount) + ' সীট)').join(', ');
   const seatsLeftText = p.totalSeats > 0
     ? (p.availableSeats > 0 ? `🎟️ ${toBengaliNumber(p.availableSeats)} টি আসন খালি আছে` : '❌ সব আসন বুক হয়ে গেছে')
@@ -115,9 +107,7 @@ function renderCard(p) {
         <div class="pkg-meta-row"><span>ফেরার তারিখ</span><strong>${formatDate(p.endDate)}</strong></div>
         <div class="pkg-meta-row"><span>মোট ডেলিগেট</span><strong>${toBengaliNumber(p.delegateCount)} জন</strong></div>
         <div class="pkg-meta-row"><span>বাহন</span><strong style="white-space:normal; text-align:right;">${escapeHtml(vehicleSummary || '—')}</strong></div>
-        <div class="flex-between">
-          <div class="pkg-fee">${formatTaka(p.delegateFee)}<span> / জন</span></div>
-        </div>
+        <div class="flex-between"><div class="pkg-fee">${formatTaka(p.delegateFee)}<span> / জন</span></div></div>
         <div class="pkg-seats-left">${seatsLeftText}</div>
       </div>
       <div class="pkg-card-footer">
@@ -125,12 +115,6 @@ function renderCard(p) {
       </div>
     </div>
   `;
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
 }
 
 loadPackages();

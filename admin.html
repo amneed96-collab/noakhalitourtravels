@@ -8,7 +8,6 @@
 </head>
 <body>
 
-<!-- ---------- লগইন স্ক্রিন ---------- -->
 <div id="login-screen" style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg, var(--forest-dark), var(--forest));">
   <div class="form-card" style="max-width:380px; width:100%;">
     <div class="text-center" style="margin-bottom:20px;">
@@ -17,26 +16,19 @@
       <p class="text-muted">শুধুমাত্র অনুমোদিত ব্যবহারকারীদের জন্য</p>
     </div>
     <form id="login-form">
-      <div class="form-group">
-        <label>ইউজারনেম</label>
-        <input type="text" name="username" required autofocus>
-      </div>
-      <div class="form-group">
-        <label>পাসওয়ার্ড</label>
-        <input type="password" name="password" required>
-      </div>
+      <div class="form-group"><label>ইউজারনেম</label><input type="text" name="username" required autofocus></div>
+      <div class="form-group"><label>পাসওয়ার্ড</label><input type="password" name="password" required></div>
       <button type="submit" class="btn btn-primary btn-block" id="login-btn">লগইন করুন</button>
     </form>
   </div>
 </div>
 
-<!-- ---------- এডমিন শেল ---------- -->
 <div class="admin-shell" id="admin-shell" style="display:none;">
-  <aside class="admin-sidebar">
+  <aside class="admin-sidebar no-print">
     <div class="brand">
       <div class="brand-mark">🧳</div>
       <div>
-        <div class="brand-name" style="font-size:1.05rem;" id="sidebar-group-name">ট্যুর এডমিন</div>
+        <div class="brand-name js-group-name" style="font-size:1.05rem;"></div>
         <div style="font-size:0.78rem; opacity:0.7;" id="sidebar-user"></div>
       </div>
     </div>
@@ -51,63 +43,41 @@
     </nav>
   </aside>
 
-  <main class="admin-main" id="admin-main">
-    <div class="spinner"></div>
-  </main>
+  <main class="admin-main" id="admin-main"><div class="spinner"></div></main>
 </div>
 
 <script src="config.js"></script>
 <script src="api.js"></script>
 <script>
-qs('#sidebar-group-name').textContent = SITE_CONFIG.groupName;
-
-// ---------- লগইন ----------
-
 function checkSession() {
   const session = Session.get();
   if (session) {
     qs('#login-screen').style.display = 'none';
     qs('#admin-shell').style.display = 'flex';
     qs('#sidebar-user').textContent = session.name + ' (' + roleLabel(session.role) + ')';
-    if (session.role !== 'admin') {
-      qsa('.admin-only').forEach(el => el.style.display = 'none');
-    }
+    if (session.role !== 'admin') qsa('.admin-only').forEach(el => el.style.display = 'none');
     loadTab('packages');
   }
 }
-
-function roleLabel(role) {
-  return role === 'admin' ? 'প্রধান এডমিন' : 'সহকারী এডমিন';
-}
+function roleLabel(role) { return role === 'admin' ? 'প্রধান এডমিন' : 'সহকারী এডমিন'; }
 
 qs('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = qs('#login-btn');
-  btn.disabled = true;
-  btn.textContent = 'যাচাই হচ্ছে...';
+  btn.disabled = true; btn.textContent = 'যাচাই হচ্ছে...';
   const fd = new FormData(e.target);
   try {
     const res = await apiPost('login', { username: fd.get('username'), password: fd.get('password') });
-    if (!res.ok) {
-      showToast(res.error, 'error');
-      btn.disabled = false;
-      btn.textContent = 'লগইন করুন';
-      return;
-    }
+    if (!res.ok) { showToast(res.error, 'error'); btn.disabled = false; btn.textContent = 'লগইন করুন'; return; }
     Session.set(res.data);
     checkSession();
   } catch (err) {
     showToast('সংযোগ ত্রুটি: ' + err.message, 'error');
-    btn.disabled = false;
-    btn.textContent = 'লগইন করুন';
+    btn.disabled = false; btn.textContent = 'লগইন করুন';
   }
 });
 
-qs('#logout-link').addEventListener('click', (e) => {
-  e.preventDefault();
-  Session.clear();
-  location.reload();
-});
+qs('#logout-link').addEventListener('click', (e) => { e.preventDefault(); Session.clear(); location.reload(); });
 
 qsa('.admin-nav a[data-tab]').forEach(a => {
   a.addEventListener('click', (e) => {
@@ -117,14 +87,6 @@ qsa('.admin-nav a[data-tab]').forEach(a => {
     loadTab(a.dataset.tab);
   });
 });
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
-}
-
-// ---------- ট্যাব রাউটার ----------
 
 const TABS = {
   packages: renderPackagesTab,
@@ -138,25 +100,24 @@ const TABS = {
 async function loadTab(name) {
   const main = qs('#admin-main');
   main.innerHTML = '<div class="spinner"></div>';
-  try {
-    await TABS[name]();
-  } catch (err) {
-    main.innerHTML = '<div class="empty-state">লোড করতে সমস্যা: ' + err.message + '</div>';
-  }
+  try { await TABS[name](); }
+  catch (err) { main.innerHTML = '<div class="empty-state">লোড করতে সমস্যা: ' + err.message + '</div>'; }
 }
 
-// ---------- ১. প্যাকেজ তালিকা ----------
+// ============================================================
+// ১. প্যাকেজ তালিকা (এডিট বাটনসহ)
+// ============================================================
 
 async function renderPackagesTab() {
   const main = qs('#admin-main');
-  const res = await apiGet('getPackages');
+  const res = await apiGet('getPackages', null, { noCache: true });
   if (!res.ok) throw new Error(res.error);
   const packages = res.data;
 
   main.innerHTML = `
     <div class="flex-between"><h2>প্যাকেজ সমূহ</h2></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>স্পট</th><th>তারিখ</th><th>দিন</th><th>ডেলিগেট</th><th>ফি</th><th>স্ট্যাটাস</th><th>লিংক</th></tr></thead>
+      <thead><tr><th>স্পট</th><th>তারিখ</th><th>দিন</th><th>ডেলিগেট</th><th>ফি</th><th>স্ট্যাটাস</th><th>লিংক</th><th>কার্যক্রম</th></tr></thead>
       <tbody>
         ${packages.map(p => `
           <tr>
@@ -167,14 +128,176 @@ async function renderPackagesTab() {
             <td>${formatTaka(p.delegateFee)}</td>
             <td><span class="status-chip status-confirmed">${p.status}</span></td>
             <td><a href="booking.html?pkg=${p.slug}" target="_blank">বুকিং লিংক ↗</a></td>
+            <td>
+              <button class="btn btn-sm btn-forest edit-pkg-btn" data-id="${p.id}">✏️ এডিট</button>
+              <button class="btn btn-sm btn-outline-forest print-sheet-btn" data-id="${p.id}">🖨️ বুকিং শীট</button>
+            </td>
           </tr>
-        `).join('') || '<tr><td colspan="7" class="text-center text-muted">কোনো প্যাকেজ নেই</td></tr>'}
+        `).join('') || '<tr><td colspan="8" class="text-center text-muted">কোনো প্যাকেজ নেই</td></tr>'}
       </tbody>
     </table></div>
+    <div id="edit-pkg-area" class="mt-24"></div>
   `;
+
+  qsa('.edit-pkg-btn').forEach(btn => btn.addEventListener('click', () => openEditPackage(packages.find(p => p.id === btn.dataset.id))));
+  qsa('.print-sheet-btn').forEach(btn => btn.addEventListener('click', () => openBookingSheetPrint(packages.find(p => p.id === btn.dataset.id))));
 }
 
-// ---------- ২. নতুন প্যাকেজ তৈরি ----------
+// ---------- প্যাকেজ এডিট ----------
+
+let editVehicleRows = [];
+
+function openEditPackage(pkg) {
+  editVehicleRows = JSON.parse(JSON.stringify(pkg.vehicles));
+  const area = qs('#edit-pkg-area');
+  area.innerHTML = `
+    <div class="form-card" style="max-width:680px;">
+      <h3 style="margin-top:0;">✏️ প্যাকেজ এডিট করুন — ${escapeHtml(pkg.spotName)}</h3>
+      <form id="edit-pkg-form">
+        <div class="form-group"><label>পর্যটন কেন্দ্রের নাম *</label><input type="text" name="spotName" value="${escapeHtml(pkg.spotName)}" required></div>
+        <div class="form-row">
+          <div class="form-group"><label>শুরুর তারিখ *</label><input type="date" name="startDate" value="${pkg.startDate ? new Date(pkg.startDate).toISOString().split('T')[0] : ''}" required></div>
+          <div class="form-group"><label>শেষের তারিখ *</label><input type="date" name="endDate" value="${pkg.endDate ? new Date(pkg.endDate).toISOString().split('T')[0] : ''}" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>মোট দিন *</label><input type="number" name="totalDays" value="${pkg.totalDays}" min="1" required></div>
+          <div class="form-group"><label>ডেলিগেট সংখ্যা *</label><input type="number" name="delegateCount" value="${pkg.delegateCount}" min="1" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>জনপ্রতি ডেলিগেট ফি *</label><input type="number" name="delegateFee" value="${pkg.delegateFee}" min="0" required></div>
+          <div class="form-group"><label>স্ট্যাটাস</label>
+            <select name="status">
+              <option value="active" ${pkg.status === 'active' ? 'selected' : ''}>সক্রিয়</option>
+              <option value="closed" ${pkg.status === 'closed' ? 'selected' : ''}>বন্ধ</option>
+            </select>
+          </div>
+        </div>
+        <fieldset>
+          <legend>🚌 গাড়ির তথ্য <span class="text-muted" style="font-weight:400; font-size:0.8rem;">(নতুন গাড়ি যোগ করা যাবে, বিদ্যমান গাড়ির সীট সংখ্যা পরিবর্তন করলে আগের বুকিং প্রভাবিত হবে না)</span></legend>
+          <div id="edit-vehicle-rows"></div>
+          <button type="button" class="btn btn-sm btn-forest" id="edit-add-vehicle-btn">+ নতুন গাড়ি যোগ করুন</button>
+        </fieldset>
+        <div class="form-group"><label>অতিরিক্ত নোট</label><textarea name="coverNote" rows="2">${escapeHtml(pkg.coverNote || '')}</textarea></div>
+        <div class="flex-between">
+          <button type="submit" class="btn btn-primary" id="edit-pkg-submit-btn">পরিবর্তন সংরক্ষণ করুন</button>
+          <button type="button" class="btn btn-outline-forest" id="cancel-edit-btn">বাতিল</button>
+        </div>
+      </form>
+    </div>
+  `;
+  renderEditVehicleRows();
+  qs('#edit-add-vehicle-btn').addEventListener('click', () => { editVehicleRows.push({ name: '', type: 'বাস', seatCount: 30 }); renderEditVehicleRows(); });
+  qs('#cancel-edit-btn').addEventListener('click', () => { area.innerHTML = ''; });
+  qs('#edit-pkg-form').addEventListener('submit', (e) => submitEditPackage(e, pkg.id));
+  area.scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderEditVehicleRows() {
+  const container = qs('#edit-vehicle-rows');
+  container.innerHTML = editVehicleRows.map((v, i) => `
+    <div class="form-row" style="grid-template-columns: 1.4fr 1fr 0.8fr auto; align-items:end; margin-bottom:10px;">
+      <div class="form-group" style="margin:0;"><label>গাড়ির নাম</label><input type="text" data-idx="${i}" data-field="name" value="${escapeHtml(v.name)}"></div>
+      <div class="form-group" style="margin:0;"><label>ধরন</label>
+        <select data-idx="${i}" data-field="type">
+          <option value="বাস" ${v.type === 'বাস' ? 'selected' : ''}>বাস</option>
+          <option value="হাইস" ${v.type === 'হাইস' ? 'selected' : ''}>হাইস</option>
+          <option value="নোয়াহ" ${v.type === 'নোয়াহ' ? 'selected' : ''}>নোয়াহ</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;"><label>সীট সংখ্যা</label><input type="number" min="1" data-idx="${i}" data-field="seatCount" value="${v.seatCount}"></div>
+      <button type="button" class="btn btn-sm btn-danger edit-remove-vehicle" data-idx="${i}" ${editVehicleRows.length === 1 ? 'disabled' : ''}>✕</button>
+    </div>
+  `).join('');
+  qsa('#edit-vehicle-rows input, #edit-vehicle-rows select').forEach(el => {
+    el.addEventListener('input', () => {
+      const idx = Number(el.dataset.idx);
+      editVehicleRows[idx][el.dataset.field] = el.dataset.field === 'seatCount' ? Number(el.value) : el.value;
+    });
+  });
+  qsa('.edit-remove-vehicle').forEach(btn => btn.addEventListener('click', () => { editVehicleRows.splice(Number(btn.dataset.idx), 1); renderEditVehicleRows(); }));
+}
+
+async function submitEditPackage(e, pkgId) {
+  e.preventDefault();
+  const btn = qs('#edit-pkg-submit-btn');
+  btn.disabled = true; btn.textContent = 'সংরক্ষণ হচ্ছে...';
+  const fd = new FormData(e.target);
+  try {
+    const res = await apiPost('updatePackage', {
+      id: pkgId,
+      spotName: fd.get('spotName'), startDate: fd.get('startDate'), endDate: fd.get('endDate'),
+      totalDays: Number(fd.get('totalDays')), delegateCount: Number(fd.get('delegateCount')),
+      delegateFee: Number(fd.get('delegateFee')), status: fd.get('status'),
+      coverNote: fd.get('coverNote'), vehicles: editVehicleRows
+    });
+    if (!res.ok) throw new Error(res.error);
+    showToast('প্যাকেজ হালনাগাদ হয়েছে', 'success');
+    qs('#edit-pkg-area').innerHTML = '';
+    loadTab('packages');
+  } catch (err) {
+    showToast('ত্রুটি: ' + err.message, 'error');
+    btn.disabled = false; btn.textContent = 'পরিবর্তন সংরক্ষণ করুন';
+  }
+}
+
+// ---------- প্যাকেজ ভিত্তিক বুকিং শীট প্রিন্ট ----------
+
+async function openBookingSheetPrint(pkg) {
+  showToast('বুকিং শীট তৈরি হচ্ছে...', 'info');
+  const [seatRes, bkRes] = await Promise.all([
+    apiGet('getSeats', { packageId: pkg.id }, { noCache: true }),
+    apiGet('getBookings', { packageId: pkg.id }, { noCache: true })
+  ]);
+  const seats = seatRes.ok ? seatRes.data : [];
+  const bookings = bkRes.ok ? bkRes.data.filter(b => b.status !== 'cancelled') : [];
+
+  const seatBookingMap = {};
+  bookings.forEach(b => {
+    (b.seats || []).forEach(s => { seatBookingMap[s.vehicleName + '|' + s.seatNo] = b; });
+  });
+
+  const win = window.open('', '_blank');
+  const rowsHtml = pkg.vehicles.map(v => {
+    const vSeats = seats.filter(s => s.vehicleName === v.name).sort((a, b) => a.seatNo.localeCompare(b.seatNo));
+    return `
+      <h3 style="margin-top:24px;">${escapeHtml(v.name)} (${escapeHtml(v.type || '')}) — ${toBengaliNumber(v.seatCount)} সীট</h3>
+      <table border="1" cellspacing="0" cellpadding="8" style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead><tr style="background:#eee;"><th>সীট নং</th><th>বুকিংকারীর নাম</th><th>মোবাইল নং</th><th>স্ট্যাটাস</th></tr></thead>
+        <tbody>
+          ${vSeats.map(s => {
+            const b = seatBookingMap[v.name + '|' + s.seatNo];
+            return `<tr>
+              <td style="text-align:center; font-weight:bold;">${escapeHtml(s.seatNo)}</td>
+              <td>${b ? escapeHtml(b.name) : ''}</td>
+              <td>${b ? escapeHtml(b.mobile) : ''}</td>
+              <td style="text-align:center;">${b ? (b.status === 'confirmed' ? 'কনফার্ম' : 'অপেক্ষমান') : (s.status === 'held' ? 'হোল্ড' : 'খালি')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  }).join('');
+
+  win.document.write(`
+    <html><head><meta charset="UTF-8"><title>বুকিং শীট - ${escapeHtml(pkg.spotName)}</title>
+    <style>
+      body { font-family: 'Hind Siliguri', sans-serif; padding: 30px; }
+      h2 { margin-bottom: 4px; }
+      .meta { color: #555; margin-bottom: 20px; font-size: 14px; }
+    </style></head>
+    <body>
+      <h2>প্যাকেজ ভিত্তিক বুকিং শীট — ${escapeHtml(pkg.spotName)}</h2>
+      <div class="meta">${formatDate(pkg.startDate)} — ${formatDate(pkg.endDate)} · মোট ডেলিগেট: ${toBengaliNumber(pkg.delegateCount)} জন · জনপ্রতি ফি: ${formatTaka(pkg.delegateFee)}</div>
+      ${rowsHtml}
+      <script>window.onload = () => window.print();<\/script>
+    </body></html>
+  `);
+  win.document.close();
+}
+
+// ============================================================
+// ২. নতুন প্যাকেজ তৈরি
+// ============================================================
 
 let vehicleRows = [{ name: 'বাস-১', type: 'বাস', seatCount: 40 }];
 
@@ -194,24 +317,18 @@ function renderNewPackageTab() {
           <div class="form-group"><label>ডেলিগেট সংখ্যা (লক্ষ্যমাত্রা) *</label><input type="number" name="delegateCount" min="1" required></div>
         </div>
         <div class="form-group"><label>জনপ্রতি ডেলিগেট ফি (টাকা) *</label><input type="number" name="delegateFee" min="0" required></div>
-
         <fieldset>
           <legend>🚌 গাড়ির তথ্য</legend>
           <div id="vehicle-rows"></div>
           <button type="button" class="btn btn-sm btn-forest" id="add-vehicle-btn">+ আরেকটি গাড়ি যোগ করুন</button>
         </fieldset>
-
         <div class="form-group"><label>অতিরিক্ত নোট (ঐচ্ছিক)</label><textarea name="coverNote" rows="2"></textarea></div>
-
         <button type="submit" class="btn btn-primary btn-block" id="pkg-submit-btn">প্যাকেজ প্রকাশ করুন</button>
       </form>
     </div>
   `;
   renderVehicleRows();
-  qs('#add-vehicle-btn').addEventListener('click', () => {
-    vehicleRows.push({ name: '', type: 'বাস', seatCount: 30 });
-    renderVehicleRows();
-  });
+  qs('#add-vehicle-btn').addEventListener('click', () => { vehicleRows.push({ name: '', type: 'বাস', seatCount: 30 }); renderVehicleRows(); });
   qs('#pkg-form').addEventListener('submit', submitNewPackage);
 }
 
@@ -231,47 +348,31 @@ function renderVehicleRows() {
       <button type="button" class="btn btn-sm btn-danger remove-vehicle" data-idx="${i}" ${vehicleRows.length === 1 ? 'disabled' : ''}>✕</button>
     </div>
   `).join('');
-
   qsa('#vehicle-rows input, #vehicle-rows select').forEach(el => {
     el.addEventListener('input', () => {
       const idx = Number(el.dataset.idx);
-      const field = el.dataset.field;
-      vehicleRows[idx][field] = field === 'seatCount' ? Number(el.value) : el.value;
+      vehicleRows[idx][el.dataset.field] = el.dataset.field === 'seatCount' ? Number(el.value) : el.value;
     });
   });
-  qsa('.remove-vehicle').forEach(btn => {
-    btn.addEventListener('click', () => {
-      vehicleRows.splice(Number(btn.dataset.idx), 1);
-      renderVehicleRows();
-    });
-  });
+  qsa('.remove-vehicle').forEach(btn => btn.addEventListener('click', () => { vehicleRows.splice(Number(btn.dataset.idx), 1); renderVehicleRows(); }));
 }
 
 async function submitNewPackage(e) {
   e.preventDefault();
   const btn = qs('#pkg-submit-btn');
-  btn.disabled = true;
-  btn.textContent = 'প্রকাশ হচ্ছে...';
+  btn.disabled = true; btn.textContent = 'প্রকাশ হচ্ছে...';
   const fd = new FormData(e.target);
 
-  const invalidVehicle = vehicleRows.find(v => !v.name || !v.seatCount);
-  if (invalidVehicle) {
+  if (vehicleRows.find(v => !v.name || !v.seatCount)) {
     showToast('প্রতিটি গাড়ির নাম ও সীট সংখ্যা দিন', 'error');
-    btn.disabled = false;
-    btn.textContent = 'প্যাকেজ প্রকাশ করুন';
+    btn.disabled = false; btn.textContent = 'প্যাকেজ প্রকাশ করুন';
     return;
   }
-
   try {
     const res = await apiPost('createPackage', {
-      spotName: fd.get('spotName'),
-      startDate: fd.get('startDate'),
-      endDate: fd.get('endDate'),
-      totalDays: Number(fd.get('totalDays')),
-      delegateCount: Number(fd.get('delegateCount')),
-      delegateFee: Number(fd.get('delegateFee')),
-      vehicles: vehicleRows,
-      coverNote: fd.get('coverNote')
+      spotName: fd.get('spotName'), startDate: fd.get('startDate'), endDate: fd.get('endDate'),
+      totalDays: Number(fd.get('totalDays')), delegateCount: Number(fd.get('delegateCount')),
+      delegateFee: Number(fd.get('delegateFee')), vehicles: vehicleRows, coverNote: fd.get('coverNote')
     });
     if (!res.ok) throw new Error(res.error);
     showToast('প্যাকেজ সফলভাবে প্রকাশিত হয়েছে!', 'success');
@@ -281,16 +382,17 @@ async function submitNewPackage(e) {
     qs('[data-tab="packages"]').classList.add('active');
   } catch (err) {
     showToast('ত্রুটি: ' + err.message, 'error');
-    btn.disabled = false;
-    btn.textContent = 'প্যাকেজ প্রকাশ করুন';
+    btn.disabled = false; btn.textContent = 'প্যাকেজ প্রকাশ করুন';
   }
 }
 
-// ---------- ৩. বুকিং ব্যবস্থাপনা ----------
+// ============================================================
+// ৩. বুকিং ব্যবস্থাপনা (মাল্টি-সীট)
+// ============================================================
 
 async function renderBookingsTab() {
   const main = qs('#admin-main');
-  const pkgRes = await apiGet('getPackages');
+  const pkgRes = await apiGet('getPackages', null, { noCache: true });
   const packages = pkgRes.ok ? pkgRes.data : [];
 
   main.innerHTML = `
@@ -317,8 +419,8 @@ async function loadBookingsForPackage(pkgId, pkg) {
   content.innerHTML = '<div class="spinner"></div>';
 
   const [bkRes, seatRes] = await Promise.all([
-    apiGet('getBookings', { packageId: pkgId }),
-    apiGet('getSeats', { packageId: pkgId })
+    apiGet('getBookings', { packageId: pkgId }, { noCache: true }),
+    apiGet('getSeats', { packageId: pkgId }, { noCache: true })
   ]);
   const bookings = bkRes.ok ? bkRes.data : [];
   const seats = seatRes.ok ? seatRes.data : [];
@@ -326,29 +428,32 @@ async function loadBookingsForPackage(pkgId, pkg) {
   content.innerHTML = `
     <div class="flex-between" style="margin-bottom:16px;">
       <h3 style="margin:0;">বুকিং তালিকা (${toBengaliNumber(bookings.length)})</h3>
-      <button class="btn btn-sm btn-forest" id="hold-seats-btn">🔒 সীট হোল্ড করুন</button>
+      <div>
+        <button class="btn btn-sm btn-outline-forest" id="print-sheet-btn2">🖨️ বুকিং শীট প্রিন্ট</button>
+        <button class="btn btn-sm btn-forest" id="hold-seats-btn">🔒 সীট হোল্ড করুন</button>
+      </div>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>ক্রম</th><th>নাম</th><th>মোবাইল</th><th>গাড়ি/সীট</th><th>ফি</th><th>জমা</th><th>বকেয়া</th><th>স্ট্যাটাস</th><th>কার্যক্রম</th></tr></thead>
+      <thead><tr><th>ক্রম</th><th>নাম</th><th>মোবাইল</th><th>সীট সমূহ</th><th>মোট ফি</th><th>জমা</th><th>বকেয়া</th><th>স্ট্যাটাস</th><th>কার্যক্রম</th></tr></thead>
       <tbody>
-        ${bookings.map(b => `
+        ${bookings.map(b => {
+          const seatList = (b.seats || []).map(s => s.vehicleName + '-' + s.seatNo).join(', ');
+          return `
           <tr>
             <td>${toBengaliNumber(b.serial)}</td>
             <td><strong>${escapeHtml(b.name)}</strong><br><span class="text-muted" style="font-size:0.8rem;">${escapeHtml(b.address)}</span></td>
             <td>${escapeHtml(b.mobile)}</td>
-            <td>${escapeHtml(b.vehicleName)} - ${escapeHtml(b.seatNo)}</td>
+            <td>${escapeHtml(seatList)}</td>
             <td>${formatTaka(b.delegateFee)}</td>
-            <td>
-              <input type="number" class="paid-input" data-id="${b.id}" data-fee="${b.delegateFee}" value="${b.paidAmount}" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;">
-            </td>
+            <td><input type="number" class="paid-input" data-id="${b.id}" data-fee="${b.delegateFee}" value="${b.paidAmount}" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
             <td class="due-cell-${b.id}">${formatTaka(b.dueAmount)}</td>
             <td><span class="status-chip status-${b.status}">${statusLabel(b.status)}</span></td>
             <td>
               ${b.status === 'pending' ? `<button class="btn btn-sm btn-primary confirm-btn" data-id="${b.id}">কনফার্ম</button>` : ''}
               ${b.status !== 'cancelled' ? `<button class="btn btn-sm btn-danger cancel-btn" data-id="${b.id}">বাতিল</button>` : ''}
             </td>
-          </tr>
-        `).join('') || '<tr><td colspan="9" class="text-center text-muted">কোনো বুকিং নেই</td></tr>'}
+          </tr>`;
+        }).join('') || '<tr><td colspan="9" class="text-center text-muted">কোনো বুকিং নেই</td></tr>'}
       </tbody>
     </table></div>
   `;
@@ -382,11 +487,10 @@ async function loadBookingsForPackage(pkgId, pkg) {
   });
 
   qs('#hold-seats-btn').addEventListener('click', () => openHoldSeatsModal(pkg, seats));
+  qs('#print-sheet-btn2').addEventListener('click', () => openBookingSheetPrint(pkg));
 }
 
-function statusLabel(status) {
-  return { pending: 'অপেক্ষমান', confirmed: 'কনফার্ম', cancelled: 'বাতিল' }[status] || status;
-}
+function statusLabel(status) { return { pending: 'অপেক্ষমান', confirmed: 'কনফার্ম', cancelled: 'বাতিল' }[status] || status; }
 
 function openHoldSeatsModal(pkg, seats) {
   const overlay = document.createElement('div');
@@ -416,13 +520,8 @@ function openHoldSeatsModal(pkg, seats) {
   qsa('.seat[data-status="available"]', overlay).forEach(el => {
     el.addEventListener('click', () => {
       const key = el.dataset.vehicle + '|' + el.dataset.seat;
-      if (toHold.includes(key)) {
-        toHold.splice(toHold.indexOf(key), 1);
-        el.classList.remove('seat-selected');
-      } else {
-        toHold.push(key);
-        el.classList.add('seat-selected');
-      }
+      if (toHold.includes(key)) { toHold.splice(toHold.indexOf(key), 1); el.classList.remove('seat-selected'); }
+      else { toHold.push(key); el.classList.add('seat-selected'); }
     });
   });
 
@@ -430,11 +529,7 @@ function openHoldSeatsModal(pkg, seats) {
   overlay.querySelector('#confirm-hold-btn').addEventListener('click', async () => {
     if (toHold.length === 0) { showToast('কোনো সীট নির্বাচিত হয়নি', 'error'); return; }
     const byVehicle = {};
-    toHold.forEach(k => {
-      const [v, s] = k.split('|');
-      byVehicle[v] = byVehicle[v] || [];
-      byVehicle[v].push(s);
-    });
+    toHold.forEach(k => { const [v, s] = k.split('|'); byVehicle[v] = byVehicle[v] || []; byVehicle[v].push(s); });
     for (const v of Object.keys(byVehicle)) {
       await apiPost('holdSeats', { packageId: pkg.id, vehicleName: v, seats: byVehicle[v], holdNote: 'এডমিন হোল্ড' });
     }
@@ -444,11 +539,13 @@ function openHoldSeatsModal(pkg, seats) {
   });
 }
 
-// ---------- ৪. খরচ এন্ট্রি ----------
+// ============================================================
+// ৪. খরচ এন্ট্রি
+// ============================================================
 
 async function renderExpensesTab() {
   const main = qs('#admin-main');
-  const pkgRes = await apiGet('getPackages');
+  const pkgRes = await apiGet('getPackages', null, { noCache: true });
   const packages = pkgRes.ok ? pkgRes.data : [];
 
   main.innerHTML = `
@@ -462,7 +559,6 @@ async function renderExpensesTab() {
     </div>
     <div id="expenses-content" class="mt-24"></div>
   `;
-
   qs('#exp-pkg-select').addEventListener('change', (e) => {
     if (!e.target.value) { qs('#expenses-content').innerHTML = ''; return; }
     loadExpensesForPackage(e.target.value);
@@ -472,7 +568,7 @@ async function renderExpensesTab() {
 async function loadExpensesForPackage(pkgId) {
   const content = qs('#expenses-content');
   content.innerHTML = '<div class="spinner"></div>';
-  const res = await apiGet('getExpenses', { packageId: pkgId });
+  const res = await apiGet('getExpenses', { packageId: pkgId }, { noCache: true });
   const expenses = res.ok ? res.data : [];
   const total = expenses.reduce((s, x) => s + Number(x.amount), 0);
 
@@ -483,9 +579,7 @@ async function loadExpensesForPackage(pkgId) {
         <div class="form-row">
           <div class="form-group"><label>খাত/শিরোনাম *</label><input type="text" name="title" required placeholder="যেমন: গাড়ি ভাড়া"></div>
           <div class="form-group"><label>ক্যাটাগরি</label>
-            <select name="category">
-              <option>গাড়ি ভাড়া</option><option>খাবার</option><option>থাকা</option><option>টিকিট/এন্ট্রি ফি</option><option>অন্যান্য</option>
-            </select>
+            <select name="category"><option>গাড়ি ভাড়া</option><option>খাবার</option><option>থাকা</option><option>টিকিট/এন্ট্রি ফি</option><option>অন্যান্য</option></select>
           </div>
         </div>
         <div class="form-row">
@@ -502,11 +596,8 @@ async function loadExpensesForPackage(pkgId) {
       <tbody>
         ${expenses.map(x => `
           <tr>
-            <td>${escapeHtml(x.title)}</td>
-            <td>${escapeHtml(x.category)}</td>
-            <td>${formatTaka(x.amount)}</td>
-            <td>${formatDate(x.date)}</td>
-            <td class="text-muted">${escapeHtml(x.note)}</td>
+            <td>${escapeHtml(x.title)}</td><td>${escapeHtml(x.category)}</td><td>${formatTaka(x.amount)}</td>
+            <td>${formatDate(x.date)}</td><td class="text-muted">${escapeHtml(x.note)}</td>
             <td><button class="btn btn-sm btn-danger del-exp-btn" data-id="${x.id}">✕</button></td>
           </tr>
         `).join('') || '<tr><td colspan="6" class="text-center text-muted">কোনো খরচ যোগ করা হয়নি</td></tr>'}
@@ -532,19 +623,23 @@ async function loadExpensesForPackage(pkgId) {
   }));
 }
 
-// ---------- ৫ ও ৬. রিপোর্ট (এডমিন-মাত্র) ----------
+// ============================================================
+// ৫. রিপোর্ট (প্রিন্ট সাপোর্টসহ)
+// ============================================================
 
 async function renderReportsTab() {
   const session = Session.get();
   if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু প্রধান এডমিনের জন্য।</div>'; return; }
 
   const main = qs('#admin-main');
-  const res = await apiGet('getOverallReport');
+  const res = await apiGet('getOverallReport', null, { noCache: true });
   if (!res.ok) throw new Error(res.error);
   const r = res.data;
 
   main.innerHTML = `
-    <h2>মোট আয়-ব্যয় রিপোর্ট</h2>
+    <div class="flex-between"><h2>মোট আয়-ব্যয় রিপোর্ট</h2>
+      <button class="btn btn-outline-forest btn-sm" id="print-all-report-btn">🖨️ সব প্যাকেজ একসাথে প্রিন্ট</button>
+    </div>
     <div class="stat-grid">
       <div class="stat-card"><div class="label">মোট প্যাকেজ</div><div class="value">${toBengaliNumber(r.totalPackages)}</div></div>
       <div class="stat-card"><div class="label">মোট বুকিং</div><div class="value">${toBengaliNumber(r.totalBookings)}</div></div>
@@ -554,9 +649,9 @@ async function renderReportsTab() {
       <div class="stat-card"><div class="label">নীট মুনাফা</div><div class="value">${formatTaka(r.netProfit)}</div></div>
     </div>
 
-    <h3>প্যাকেজ ভিত্তিক আয়-ব্যয়</h3>
+    <div class="flex-between"><h3>প্যাকেজ ভিত্তিক আয়-ব্যয়</h3></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>স্পট</th><th>বুকিং</th><th>আয়</th><th>ব্যয়</th><th>বকেয়া</th><th>নীট মুনাফা</th></tr></thead>
+      <thead><tr><th>স্পট</th><th>বুকিং</th><th>আয়</th><th>ব্যয়</th><th>বকেয়া</th><th>নীট মুনাফা</th><th>প্রিন্ট</th></tr></thead>
       <tbody>
         ${r.perPackage.map(p => `
           <tr>
@@ -566,14 +661,58 @@ async function renderReportsTab() {
             <td>${formatTaka(p.totalExpense)}</td>
             <td>${formatTaka(p.totalDue)}</td>
             <td style="font-weight:700; color:${p.netProfit >= 0 ? 'var(--forest)' : 'var(--red)'};">${formatTaka(p.netProfit)}</td>
+            <td><button class="btn btn-sm btn-outline-forest print-one-report-btn" data-id="${p.packageId}" data-name="${escapeHtml(p.spotName)}">🖨️</button></td>
           </tr>
-        `).join('') || '<tr><td colspan="6" class="text-center text-muted">কোনো তথ্য নেই</td></tr>'}
+        `).join('') || '<tr><td colspan="7" class="text-center text-muted">কোনো তথ্য নেই</td></tr>'}
       </tbody>
     </table></div>
   `;
+
+  qs('#print-all-report-btn').addEventListener('click', () => printReport(r, null));
+  qsa('.print-one-report-btn').forEach(btn => btn.addEventListener('click', () => {
+    const p = r.perPackage.find(x => x.packageId === btn.dataset.id);
+    printReport(r, p);
+  }));
 }
 
-// ---------- ৭. এডমিন ব্যবস্থাপনা (প্রধান এডমিন-মাত্র) ----------
+function printReport(overall, singlePkg) {
+  const win = window.open('', '_blank');
+  const rows = singlePkg ? [singlePkg] : overall.perPackage;
+  const title = singlePkg ? 'আয়-ব্যয় রিপোর্ট — ' + singlePkg.spotName : 'সার্বিক আয়-ব্যয় রিপোর্ট (সব প্যাকেজ)';
+
+  win.document.write(`
+    <html><head><meta charset="UTF-8"><title>${title}</title>
+    <style>
+      body { font-family: 'Hind Siliguri', sans-serif; padding: 30px; }
+      table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
+      th, td { border:1px solid #999; padding:8px 10px; text-align:left; }
+      th { background:#eee; }
+      .totals { margin-top:20px; font-size:15px; }
+    </style></head>
+    <body>
+      <h2>${title}</h2>
+      <table>
+        <thead><tr><th>স্পট</th><th>বুকিং সংখ্যা</th><th>মোট আয়</th><th>মোট ব্যয়</th><th>বকেয়া</th><th>নীট মুনাফা</th></tr></thead>
+        <tbody>
+          ${rows.map(p => `<tr><td>${escapeHtml(p.spotName)}</td><td>${toBengaliNumber(p.bookings)}</td><td>${formatTaka(p.totalIncome)}</td><td>${formatTaka(p.totalExpense)}</td><td>${formatTaka(p.totalDue)}</td><td>${formatTaka(p.netProfit)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      ${!singlePkg ? `
+      <div class="totals">
+        <strong>সর্বমোট আয়:</strong> ${formatTaka(overall.totalIncome)} &nbsp;&nbsp;
+        <strong>সর্বমোট ব্যয়:</strong> ${formatTaka(overall.totalExpense)} &nbsp;&nbsp;
+        <strong>সর্বমোট বকেয়া:</strong> ${formatTaka(overall.totalDue)} &nbsp;&nbsp;
+        <strong>নীট মুনাফা:</strong> ${formatTaka(overall.netProfit)}
+      </div>` : ''}
+      <script>window.onload = () => window.print();<\/script>
+    </body></html>
+  `);
+  win.document.close();
+}
+
+// ============================================================
+// ৬. এডমিন ব্যবস্থাপনা
+// ============================================================
 
 async function renderAdminsTab() {
   const session = Session.get();
@@ -601,19 +740,13 @@ async function renderAdminsTab() {
         <button type="submit" class="btn btn-primary">যোগ করুন</button>
       </form>
     </div>
-
     <div class="table-wrap"><table>
       <thead><tr><th>ইউজারনেম</th><th>নাম</th><th>ভূমিকা</th><th>সক্রিয়</th><th></th></tr></thead>
       <tbody>
         ${admins.map(a => `
           <tr>
-            <td>${escapeHtml(a.username)}</td>
-            <td>${escapeHtml(a.name)}</td>
-            <td>${roleLabel(a.role)}</td>
-            <td>${a.active ? '✅' : '❌'}</td>
-            <td>
-              ${a.username !== session.username ? `<button class="btn btn-sm btn-danger del-admin-btn" data-username="${a.username}">✕ মুছুন</button>` : '<span class="text-muted">(আপনি)</span>'}
-            </td>
+            <td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.name)}</td><td>${roleLabel(a.role)}</td><td>${a.active ? '✅' : '❌'}</td>
+            <td>${a.username !== session.username ? `<button class="btn btn-sm btn-danger del-admin-btn" data-username="${a.username}">✕ মুছুন</button>` : '<span class="text-muted">(আপনি)</span>'}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -623,10 +756,7 @@ async function renderAdminsTab() {
   qs('#admin-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const res = await apiPost('manageAdmin', {
-      mode: 'add', username: fd.get('username'), password: fd.get('password'),
-      name: fd.get('name'), role: fd.get('role')
-    });
+    const res = await apiPost('manageAdmin', { mode: 'add', username: fd.get('username'), password: fd.get('password'), name: fd.get('name'), role: fd.get('role') });
     if (res.ok) { showToast('যোগ করা হয়েছে', 'success'); renderAdminsTab(); }
     else showToast(res.error, 'error');
   });

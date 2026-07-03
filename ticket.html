@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>আমার টিকেট</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="top-strip no-print"><div class="container"><span class="js-header-admin-line"></span></div></div>
+
+<header class="site-header no-print">
+  <div class="container">
+    <div class="brand">
+      <div class="brand-mark">🧳</div>
+      <div class="brand-name js-group-name"></div>
+    </div>
+    <nav class="header-nav"><a href="index.html">← প্যাকেজ সমূহ</a></nav>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container">
+    <div class="no-print">
+      <div class="section-title">
+        <h2>🎫 আমার টিকেট খুঁজুন</h2>
+        <p>নাম অথবা মোবাইল নম্বর দিয়ে আপনার কনফার্ম হওয়া টিকেট বের করুন</p>
+      </div>
+      <div class="form-card" style="max-width:520px; margin: 0 auto 32px;">
+        <form id="search-form">
+          <div class="form-row">
+            <div class="form-group"><label>নাম</label><input type="text" name="name" placeholder="আপনার নাম"></div>
+            <div class="form-group"><label>মোবাইল নম্বর</label><input type="tel" name="mobile" placeholder="01XXXXXXXXX"></div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">টিকেট খুঁজুন</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="results"></div>
+  </div>
+</section>
+
+<footer class="site-footer no-print">
+  <div class="container"><div class="js-group-name"></div></div>
+</footer>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+qs('#search-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const name = fd.get('name').trim();
+  const mobile = fd.get('mobile').trim();
+  if (!name && !mobile) { showToast('নাম অথবা মোবাইল নম্বর দিন', 'error'); return; }
+
+  const results = qs('#results');
+  results.innerHTML = '<div class="spinner"></div>';
+
+  const res = await apiGet('findTickets', { name, mobile }, { noCache: true });
+  if (!res.ok) { results.innerHTML = '<div class="empty-state">খুঁজতে সমস্যা হয়েছে</div>'; return; }
+
+  if (res.data.length === 0) {
+    results.innerHTML = '<div class="empty-state">কোনো কনফার্ম টিকেট পাওয়া যায়নি। বুকিং কনফার্ম না হলে টিকেট দেখা যাবে না।</div>';
+    return;
+  }
+
+  results.innerHTML = `
+    <div class="flex-between no-print" style="margin-bottom:16px;">
+      <h3 style="margin:0;">${toBengaliNumber(res.data.length)}টি টিকেট পাওয়া গেছে</h3>
+      <button class="btn btn-forest btn-sm" onclick="window.print()">🖨️ সব প্রিন্ট করুন</button>
+    </div>
+    <div id="ticket-container">
+      ${res.data.map(renderTicket).join('')}
+    </div>
+  `;
+});
+
+function renderTicket(b) {
+  const seatList = (b.seats || []).map(s => s.vehicleName + '-' + s.seatNo).join(', ');
+  return `
+    <div class="ticket-card">
+      <div class="ticket-header">
+        <div class="ticket-group-name js-group-name"></div>
+        <div class="ticket-status">✅ কনফার্মড</div>
+      </div>
+      <div class="ticket-body">
+        <div class="ticket-row"><span>প্যাকেজ</span><strong>${escapeHtml(b.packageInfo ? b.packageInfo.spotName : '')}</strong></div>
+        <div class="ticket-row"><span>ভ্রমণ তারিখ</span><strong>${b.packageInfo ? formatDate(b.packageInfo.startDate) + ' - ' + formatDate(b.packageInfo.endDate) : ''}</strong></div>
+        <div class="ticket-row"><span>বুকিংয়ের তারিখ</span><strong>${formatDate(b.date)}</strong></div>
+        <div class="ticket-row"><span>যাত্রীর নাম</span><strong>${escapeHtml(b.name)}</strong></div>
+        <div class="ticket-row"><span>মোবাইল</span><strong>${escapeHtml(b.mobile)}</strong></div>
+        <div class="ticket-row"><span>সীট নং</span><strong>${escapeHtml(seatList)}</strong></div>
+        <div class="ticket-row"><span>মোট ফি</span><strong>${formatTaka(b.delegateFee)}</strong></div>
+        <div class="ticket-row"><span>জমা</span><strong>${formatTaka(b.paidAmount)}</strong></div>
+        <div class="ticket-row"><span>বকেয়া</span><strong style="color:${Number(b.dueAmount) > 0 ? 'var(--red)' : 'var(--forest)'};">${formatTaka(b.dueAmount)}</strong></div>
+      </div>
+      <div class="ticket-footer">
+        <div>${escapeHtml(SITE_CONFIG.ticketAdminName)}: ${escapeHtml(SITE_CONFIG.ticketAdminPhone)}</div>
+        <div class="ticket-credit">${escapeHtml(SITE_CONFIG.ticketFooterCredit)}</div>
+      </div>
+      <div class="no-print" style="text-align:center; margin-top:10px;">
+        <button class="btn btn-sm btn-outline-forest print-single-btn">🖨️ শুধু এই টিকেট প্রিন্ট</button>
+      </div>
+    </div>
+  `;
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('print-single-btn')) {
+    const card = e.target.closest('.ticket-card');
+    const all = qsa('.ticket-card');
+    all.forEach(c => { if (c !== card) c.style.display = 'none'; });
+    window.print();
+    all.forEach(c => c.style.display = '');
+  }
+});
+</script>
+</body>
+</html>
