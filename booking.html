@@ -17,6 +17,7 @@
       <div class="brand-name js-group-name"></div>
     </div>
     <nav class="header-nav"><a href="index.html">← প্যাকেজ সমূহ</a></nav>
+    <button class="hamburger-btn" aria-label="মেনু"><span></span><span></span><span></span></button>
   </div>
 </header>
 
@@ -92,6 +93,19 @@ function render() {
               <div class="form-group"><label>মোট ডেলিগেট ফি</label><input type="text" id="fee-display" readonly value="${formatTaka(0)}" style="background:var(--cream-dark);"></div>
               <div class="form-group"><label>জমা দিচ্ছেন (টাকা)</label><input type="number" name="paidAmount" min="0" placeholder="0" id="paid-input"></div>
             </div>
+            <div class="form-group" id="payment-method-group" style="display:none;">
+              <label>পেমেন্ট মাধ্যম *</label>
+              <select name="paymentMethod" id="payment-method-select">
+                <option value="bkash">📱 বিকাশ</option>
+                <option value="nagad">📱 নগদ</option>
+                <option value="cash">💵 হাতে হাতে / নগদ পরিশোধ</option>
+              </select>
+            </div>
+            <div class="form-group" id="transaction-id-group" style="display:none;">
+              <label>ট্রানজেকশন আইডি (বিকাশ/নগদ) *</label>
+              <input type="text" name="transactionId" id="transaction-id-input" placeholder="যেমন: 8N7A2X9K1M">
+              <div class="hint">বিকাশ/নগদ থেকে পাঠানো এসএমএস-এ থাকা ট্রানজেকশন আইডিটি বসান</div>
+            </div>
             <div class="form-group"><label>বকেয়া থাকবে</label><input type="text" id="due-display" readonly value="${formatTaka(0)}" style="background:var(--cream-dark); color:var(--red); font-weight:700;"></div>
             <button type="submit" class="btn btn-primary btn-block" id="submit-btn" disabled>সীট নির্বাচন করুন</button>
           </form>
@@ -117,6 +131,31 @@ function updateFeeDisplay() {
   const paid = Number(qs('#paid-input').value) || 0;
   qs('#paid-input').max = fee;
   qs('#due-display').value = formatTaka(Math.max(0, fee - paid));
+
+  const methodGroup = qs('#payment-method-group');
+  const txnGroup = qs('#transaction-id-group');
+  const methodSelect = qs('#payment-method-select');
+  const txnInput = qs('#transaction-id-input');
+
+  if (paid > 0) {
+    methodGroup.style.display = '';
+    updateTxnVisibility();
+  } else {
+    methodGroup.style.display = 'none';
+    txnGroup.style.display = 'none';
+    txnInput.required = false;
+  }
+
+  function updateTxnVisibility() {
+    if (methodSelect.value === 'cash') {
+      txnGroup.style.display = 'none';
+      txnInput.required = false;
+    } else {
+      txnGroup.style.display = '';
+      txnInput.required = true;
+    }
+  }
+  methodSelect.onchange = updateTxnVisibility;
 }
 
 function renderVehicles() {
@@ -143,7 +182,7 @@ function renderVehicles() {
           <span>${escapeHtml(v.name)} · ${escapeHtml(v.type || '')}</span>
           <span class="text-muted" style="font-weight:500; font-size:0.85rem;">${toBengaliNumber(availableCount)}/${toBengaliNumber(vSeats.length)} খালি</span>
         </div>
-        <div class="seat-grid">${vSeats.map(s => renderSeat(v.name, s)).join('')}</div>
+        <div class="seat-grid">${renderSeatRows(v.name, vSeats)}</div>
       </div>
     `;
   }).join('');
@@ -154,6 +193,40 @@ function renderVehicles() {
       toggleSeat(el.dataset.vehicle, el.dataset.seat);
     });
   });
+}
+
+// সীটগুলোকে ৪টা করে সারিতে ভাগ করা (২+গ্যাপ+২), শেষে বিজোড় থাকলে শেষ সারিতে ৫টা
+function renderSeatRows(vehicleName, vSeats) {
+  const sorted = [...vSeats].sort((a, b) => a.seatNo.localeCompare(b.seatNo, undefined, { numeric: true }));
+  const total = sorted.length;
+  const remainder = total % 4;
+  const rows = [];
+  let i = 0;
+
+  // যদি শেষে ১টা বিজোড় সীট বাঁচে, শেষ সারিতে ৫টা রাখা হবে (৪+১)
+  const lastRowSize = remainder === 1 && total >= 5 ? 5 : (remainder === 0 ? 4 : remainder);
+
+  while (i < total) {
+    const remaining = total - i;
+    const rowSize = remaining === remainder + 4 && remainder === 1 ? 4 : (remaining <= lastRowSize ? remaining : 4);
+    const chunk = sorted.slice(i, i + (remaining === lastRowSize ? lastRowSize : 4));
+    rows.push(chunk);
+    i += chunk.length;
+  }
+
+  return rows.map(row => {
+    if (row.length >= 4) {
+      const firstPair = row.slice(0, 2);
+      const restPair = row.slice(2);
+      return `<div class="seat-row">
+        <div class="seat-pair">${firstPair.map(s => renderSeat(vehicleName, s)).join('')}</div>
+        <div class="aisle-gap"></div>
+        <div class="seat-pair">${restPair.map(s => renderSeat(vehicleName, s)).join('')}</div>
+      </div>`;
+    }
+    // ৪-এর কম হলে (একদম শেষ অসম্পূর্ণ সারি) সাধারণভাবে দেখানো
+    return `<div class="seat-row"><div class="seat-pair">${row.map(s => renderSeat(vehicleName, s)).join('')}</div></div>`;
+  }).join('');
 }
 
 function renderSeat(vehicleName, seat) {
@@ -188,6 +261,16 @@ async function submitBooking(e) {
   e.preventDefault();
   if (selectedSeats.length === 0) { showToast('অনুগ্রহ করে অন্তত একটি সীট নির্বাচন করুন', 'error'); return; }
 
+  const fd0 = new FormData(e.target);
+  const paidAmount0 = Number(fd0.get('paidAmount')) || 0;
+  const paymentMethod = fd0.get('paymentMethod') || '';
+  const transactionId = (fd0.get('transactionId') || '').trim();
+
+  if (paidAmount0 > 0 && paymentMethod !== 'cash' && !transactionId) {
+    showToast('বিকাশ/নগদে পেমেন্ট করলে ট্রানজেকশন আইডি দিন', 'error');
+    return;
+  }
+
   const form = e.target;
   const btn = qs('#submit-btn');
   btn.disabled = true;
@@ -205,7 +288,9 @@ async function submitBooking(e) {
       address: fd.get('address'),
       seats: selectedSeats,
       delegateFee: currentPackage.delegateFee,
-      paidAmount
+      paidAmount,
+      paymentMethod: paidAmount > 0 ? paymentMethod : '',
+      transactionId: paidAmount > 0 ? transactionId : ''
     });
 
     if (!res.ok) {

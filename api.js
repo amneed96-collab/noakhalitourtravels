@@ -111,4 +111,22 @@ function renderSiteHeaderFooter() {
   taglineEls.forEach(el => el.textContent = SITE_CONFIG.tagline);
 }
 
-document.addEventListener('DOMContentLoaded', renderSiteHeaderFooter);
+document.addEventListener('DOMContentLoaded', () => {
+  renderSiteHeaderFooter();
+  renderBrandLogos();
+  setupHamburgerMenu();
+});
+
+function renderBrandLogos() {
+  if (!SITE_CONFIG.logoUrl) return;
+  qsa('.brand-mark').forEach(el => {
+    el.innerHTML = `<img src="${SITE_CONFIG.logoUrl}" alt="logo">`;
+  });
+}
+
+function setupHamburgerMenu() {
+  const btn = qs('.hamburger-btn');
+  const nav = qs('.header-nav');
+  if (!btn || !nav) return;
+  btn.addEventListener('click', () => nav.classList.toggle('open'));
+}

@@ -59,7 +59,7 @@ function setupSheets() {
   bk.appendRow([
     'id', 'packageId', 'serial', 'date', 'name', 'mobile', 'address',
     'seatsJson', 'delegateFee', 'paidAmount', 'dueAmount',
-    'status', 'createdAt', 'confirmedBy', 'confirmedAt'
+    'status', 'createdAt', 'confirmedBy', 'confirmedAt', 'paymentMethod', 'transactionId', 'paymentMethod', 'transactionId'
   ]);
 
   const st = getSheet(SHEET_NAMES.SEATS);
@@ -136,6 +136,8 @@ function doPost(e) {
         return jsonResponse(updatePayment(body.bookingId, body.paidAmount));
       case 'holdSeats':
         return jsonResponse(holdSeats(body.packageId, body.vehicleName, body.seats, body.holdNote));
+      case 'unholdSeats':
+        return jsonResponse(unholdSeats(body.packageId, body.vehicleName, body.seats));
       case 'releaseSeat':
         return jsonResponse(releaseSeat(body.packageId, body.vehicleName, body.seatNo));
       case 'addExpense':
@@ -364,6 +366,52 @@ function holdSeats(packageId, vehicleName, seats, holdNote) {
   return { ok: true, results };
 }
 
+function unholdSeats(packageId, vehicleName, seats) {
+  const sheet = getSheet(SHEET_NAMES.SEATS);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const results = [];
+  seats.forEach(seatNo => {
+    const rowIndex = findSeatRow(sheet, data, headers, packageId, vehicleName, seatNo);
+    if (rowIndex) {
+      const statusCol = headers.indexOf('status') + 1;
+      const currentStatus = sheet.getRange(rowIndex, statusCol).getValue();
+      if (currentStatus === 'held') {
+        sheet.getRange(rowIndex, statusCol).setValue('available');
+        sheet.getRange(rowIndex, headers.indexOf('holdNote') + 1).setValue('');
+        sheet.getRange(rowIndex, headers.indexOf('bookingId') + 1).setValue('');
+        results.push({ seatNo, ok: true });
+      } else {
+        results.push({ seatNo, ok: false });
+      }
+    }
+  });
+  return { ok: true, results };
+}
+
+function unholdSeats(packageId, vehicleName, seats) {
+  const sheet = getSheet(SHEET_NAMES.SEATS);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const results = [];
+  seats.forEach(seatNo => {
+    const rowIndex = findSeatRow(sheet, data, headers, packageId, vehicleName, seatNo);
+    if (rowIndex) {
+      const statusCol = headers.indexOf('status') + 1;
+      const currentStatus = sheet.getRange(rowIndex, statusCol).getValue();
+      if (currentStatus === 'held') {
+        sheet.getRange(rowIndex, statusCol).setValue('available');
+        sheet.getRange(rowIndex, headers.indexOf('holdNote') + 1).setValue('');
+        sheet.getRange(rowIndex, headers.indexOf('bookingId') + 1).setValue('');
+        results.push({ seatNo, ok: true });
+      } else {
+        results.push({ seatNo, ok: false });
+      }
+    }
+  });
+  return { ok: true, results };
+}
+
 function releaseSeat(packageId, vehicleName, seatNo) {
   const sheet = getSheet(SHEET_NAMES.SEATS);
   const data = sheet.getDataRange().getValues();
@@ -420,9 +468,9 @@ function createBooking(body) {
   const dueAmount = totalFee - paidAmount;
 
   bookingSheet.appendRow([
-    id, body.packageId, serial, body.date, body.name, body.mobile, body.address,
+    id, body.packageId, serial, body.date, body.name, "'" + String(body.mobile), body.address,
     JSON.stringify(requestedSeats), totalFee, paidAmount, dueAmount,
-    'pending', new Date().toISOString(), '', ''
+    'pending', new Date().toISOString(), '', '', body.paymentMethod || '', body.transactionId || ''
   ]);
 
   rowIndexes.forEach(rowIndex => {
