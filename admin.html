@@ -110,37 +110,58 @@ async function loadTab(name) {
 
 async function renderPackagesTab() {
   const main = qs('#admin-main');
-  const res = await apiGet('getPackages', null, { noCache: true });
+  const res = await apiGet('getPackagesSummary', null, { noCache: true });
   if (!res.ok) throw new Error(res.error);
   const packages = res.data;
+  const current = packages.filter(p => !p.isPast);
+  const past = packages.filter(p => p.isPast);
+
+  function renderTable(list, isPastTable) {
+    return `
+      <div class="table-wrap"><table>
+        <thead><tr><th>স্পট</th><th>তারিখ</th><th>দিন</th><th>ডেলিগেট</th><th>ফি</th><th>স্ট্যাটাস</th><th>লিংক</th><th>কার্যক্রম</th></tr></thead>
+        <tbody>
+          ${list.map(p => `
+            <tr>
+              <td><strong>${escapeHtml(p.spotName)}</strong></td>
+              <td>${formatDate(p.startDate)} - ${formatDate(p.endDate)}</td>
+              <td>${toBengaliNumber(p.totalDays)}</td>
+              <td>${toBengaliNumber(p.delegateCount)}</td>
+              <td>${formatTaka(p.delegateFee)}</td>
+              <td><span class="status-chip ${isPastTable ? 'status-cancelled' : 'status-confirmed'}">${isPastTable ? 'সমাপ্ত' : p.status}</span></td>
+              <td><a href="booking.html?pkg=${p.slug}" target="_blank">বুকিং লিংক ↗</a></td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-sm btn-forest edit-pkg-btn" data-id="${p.id}">✏️ এডিট</button>
+                <button class="btn btn-sm btn-outline-forest print-sheet-btn" data-id="${p.id}">🖨️ শীট</button>
+                <button class="btn btn-sm btn-danger delete-pkg-btn" data-id="${p.id}" data-name="${escapeHtml(p.spotName)}">🗑️ মুছুন</button>
+              </td>
+            </tr>
+          `).join('') || '<tr><td colspan="8" class="text-center text-muted">কোনো প্যাকেজ নেই</td></tr>'}
+        </tbody>
+      </table></div>
+    `;
+  }
 
   main.innerHTML = `
-    <div class="flex-between"><h2>প্যাকেজ সমূহ</h2></div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>স্পট</th><th>তারিখ</th><th>দিন</th><th>ডেলিগেট</th><th>ফি</th><th>স্ট্যাটাস</th><th>লিংক</th><th>কার্যক্রম</th></tr></thead>
-      <tbody>
-        ${packages.map(p => `
-          <tr>
-            <td><strong>${escapeHtml(p.spotName)}</strong></td>
-            <td>${formatDate(p.startDate)} - ${formatDate(p.endDate)}</td>
-            <td>${toBengaliNumber(p.totalDays)}</td>
-            <td>${toBengaliNumber(p.delegateCount)}</td>
-            <td>${formatTaka(p.delegateFee)}</td>
-            <td><span class="status-chip status-confirmed">${p.status}</span></td>
-            <td><a href="booking.html?pkg=${p.slug}" target="_blank">বুকিং লিংক ↗</a></td>
-            <td>
-              <button class="btn btn-sm btn-forest edit-pkg-btn" data-id="${p.id}">✏️ এডিট</button>
-              <button class="btn btn-sm btn-outline-forest print-sheet-btn" data-id="${p.id}">🖨️ বুকিং শীট</button>
-            </td>
-          </tr>
-        `).join('') || '<tr><td colspan="8" class="text-center text-muted">কোনো প্যাকেজ নেই</td></tr>'}
-      </tbody>
-    </table></div>
+    <div class="flex-between"><h2>চলমান প্যাকেজ সমূহ</h2></div>
+    ${renderTable(current, false)}
+
+    <div class="flex-between mt-24"><h2>পুরাতন প্যাকেজ (তারিখ পার হয়ে গেছে)</h2></div>
+    ${past.length > 0 ? renderTable(past, true) : '<div class="empty-state">কোনো পুরাতন প্যাকেজ নেই</div>'}
+
     <div id="edit-pkg-area" class="mt-24"></div>
   `;
 
-  qsa('.edit-pkg-btn').forEach(btn => btn.addEventListener('click', () => openEditPackage(packages.find(p => p.id === btn.dataset.id))));
-  qsa('.print-sheet-btn').forEach(btn => btn.addEventListener('click', () => openBookingSheetPrint(packages.find(p => p.id === btn.dataset.id))));
+  const allPackages = packages;
+  qsa('.edit-pkg-btn').forEach(btn => btn.addEventListener('click', () => openEditPackage(allPackages.find(p => p.id === btn.dataset.id))));
+  qsa('.print-sheet-btn').forEach(btn => btn.addEventListener('click', () => openBookingSheetPrint(allPackages.find(p => p.id === btn.dataset.id))));
+  qsa('.delete-pkg-btn').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm(`"${btn.dataset.name}" প্যাকেজটি সম্পূর্ণভাবে মুছে ফেলতে চান? এর সাথে সংশ্লিষ্ট সব বুকিং, সীট ও খরচও মুছে যাবে। এই কাজটি ফিরিয়ে আনা যাবে না।`)) return;
+    btn.disabled = true; btn.textContent = 'মুছে ফেলা হচ্ছে...';
+    const res = await apiPost('deletePackage', { id: btn.dataset.id });
+    if (res.ok) { showToast('প্যাকেজ মুছে ফেলা হয়েছে', 'success'); loadTab('packages'); }
+    else { showToast(res.error || 'মুছতে ব্যর্থ হয়েছে', 'error'); btn.disabled = false; btn.textContent = '🗑️ মুছুন'; }
+  }));
 }
 
 // ---------- প্যাকেজ এডিট ----------
@@ -492,31 +513,81 @@ async function loadBookingsForPackage(pkgId, pkg) {
 
 function statusLabel(status) { return { pending: 'অপেক্ষমান', confirmed: 'কনফার্ম', cancelled: 'বাতিল' }[status] || status; }
 
+// সীটগুলোকে ৪টা করে সারিতে ভাগ করা (২+গ্যাপ+২), শেষে বিজোড় থাকলে ৫ম সীট গ্যাপ বরাবর বসবে
+function renderAdminSeatRows(vehicleName, vSeats) {
+  const sorted = [...vSeats].sort((a, b) => a.seatNo.localeCompare(b.seatNo, undefined, { numeric: true }));
+  const total = sorted.length;
+  const remainder = total % 4;
+  const lastRowSize = remainder === 1 && total >= 5 ? 5 : (remainder === 0 ? 4 : remainder);
+  const rows = [];
+  let i = 0;
+  while (i < total) {
+    const remaining = total - i;
+    const chunk = sorted.slice(i, i + (remaining === lastRowSize ? lastRowSize : 4));
+    rows.push(chunk);
+    i += chunk.length;
+  }
+
+  const renderOne = (s) => `<div class="seat ${s.status === 'available' ? 'seat-available' : (s.status === 'booked' ? 'seat-booked' : 'seat-held')}" data-vehicle="${escapeHtml(vehicleName)}" data-seat="${escapeHtml(s.seatNo)}" data-status="${s.status}">${escapeHtml(s.seatNo)}</div>`;
+
+  return rows.map(row => {
+    if (row.length === 5) {
+      const firstPair = row.slice(0, 2);
+      const restPair = row.slice(2, 4);
+      const extraSeat = row[4];
+      return `<div class="seat-row">
+        <div class="seat-pair">${firstPair.map(renderOne).join('')}</div>
+        <div class="aisle-gap aisle-gap-seat">${renderOne(extraSeat)}</div>
+        <div class="seat-pair">${restPair.map(renderOne).join('')}</div>
+      </div>`;
+    }
+    if (row.length >= 4) {
+      const firstPair = row.slice(0, 2);
+      const restPair = row.slice(2);
+      return `<div class="seat-row">
+        <div class="seat-pair">${firstPair.map(renderOne).join('')}</div>
+        <div class="aisle-gap"></div>
+        <div class="seat-pair">${restPair.map(renderOne).join('')}</div>
+      </div>`;
+    }
+    return `<div class="seat-row"><div class="seat-pair">${row.map(renderOne).join('')}</div></div>`;
+  }).join('');
+}
+
 function openHoldSeatsModal(pkg, seats) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
     <div class="modal-box">
       <button class="modal-close">✕</button>
-      <h3>সীট হোল্ড করুন</h3>
-      <p class="text-muted">এডমিনের জন্য সংরক্ষিত রাখতে যেসব সীটে ক্লিক করবেন সেগুলো হোল্ড হয়ে যাবে।</p>
+      <h3>সীট হোল্ড / আনহোল্ড করুন</h3>
+      <p class="text-muted">খালি (সাদা) সীটে ক্লিক করে হোল্ড করুন, অথবা হোল্ড করা (হলুদ) সীটে ক্লিক করে আনহোল্ড করুন। বুক হওয়া (লাল) সীট পরিবর্তন করা যাবে না।</p>
+      <div class="seat-legend">
+        <span><span class="legend-dot available"></span> খালি</span>
+        <span><span class="legend-dot selected"></span> নির্বাচিত</span>
+        <span><span class="legend-dot held"></span> হোল্ড করা</span>
+        <span><span class="legend-dot booked"></span> বুক হয়ে গেছে</span>
+      </div>
       ${pkg.vehicles.map(v => {
         const vSeats = seats.filter(s => s.vehicleName === v.name);
         return `
           <div class="vehicle-block">
             <div class="vehicle-header">${escapeHtml(v.name)}</div>
-            <div class="seat-grid">
-              ${vSeats.map(s => `<div class="seat ${s.status === 'available' ? 'seat-available' : (s.status === 'booked' ? 'seat-booked' : 'seat-held')}" data-vehicle="${escapeHtml(v.name)}" data-seat="${escapeHtml(s.seatNo)}" data-status="${s.status}">${escapeHtml(s.seatNo)}</div>`).join('')}
-            </div>
+            <div class="seat-grid">${renderAdminSeatRows(v.name, vSeats)}</div>
           </div>
         `;
       }).join('')}
-      <button class="btn btn-primary btn-block" id="confirm-hold-btn">নির্বাচিত সীট হোল্ড করুন</button>
+      <div class="flex-between" style="gap:10px;">
+        <button class="btn btn-forest btn-block" id="confirm-hold-btn">🔒 নির্বাচিত খালি সীট হোল্ড করুন</button>
+        <button class="btn btn-outline-forest btn-block" id="confirm-unhold-btn">🔓 নির্বাচিত হোল্ড সীট মুক্ত করুন</button>
+      </div>
     </div>
   `;
   document.body.appendChild(overlay);
 
   const toHold = [];
+  const toUnhold = [];
+
   qsa('.seat[data-status="available"]', overlay).forEach(el => {
     el.addEventListener('click', () => {
       const key = el.dataset.vehicle + '|' + el.dataset.seat;
@@ -525,15 +596,36 @@ function openHoldSeatsModal(pkg, seats) {
     });
   });
 
+  qsa('.seat[data-status="held"]', overlay).forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.vehicle + '|' + el.dataset.seat;
+      if (toUnhold.includes(key)) { toUnhold.splice(toUnhold.indexOf(key), 1); el.classList.remove('seat-selected'); el.classList.add('seat-held'); }
+      else { toUnhold.push(key); el.classList.remove('seat-held'); el.classList.add('seat-selected'); }
+    });
+  });
+
   overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+
   overlay.querySelector('#confirm-hold-btn').addEventListener('click', async () => {
-    if (toHold.length === 0) { showToast('কোনো সীট নির্বাচিত হয়নি', 'error'); return; }
+    if (toHold.length === 0) { showToast('হোল্ড করার জন্য কোনো খালি সীট নির্বাচন করা হয়নি', 'error'); return; }
     const byVehicle = {};
     toHold.forEach(k => { const [v, s] = k.split('|'); byVehicle[v] = byVehicle[v] || []; byVehicle[v].push(s); });
     for (const v of Object.keys(byVehicle)) {
       await apiPost('holdSeats', { packageId: pkg.id, vehicleName: v, seats: byVehicle[v], holdNote: 'এডমিন হোল্ড' });
     }
     showToast('সীট হোল্ড করা হয়েছে', 'success');
+    overlay.remove();
+    loadBookingsForPackage(pkg.id, pkg);
+  });
+
+  overlay.querySelector('#confirm-unhold-btn').addEventListener('click', async () => {
+    if (toUnhold.length === 0) { showToast('আনহোল্ড করার জন্য কোনো হোল্ড সীট নির্বাচন করা হয়নি', 'error'); return; }
+    const byVehicle = {};
+    toUnhold.forEach(k => { const [v, s] = k.split('|'); byVehicle[v] = byVehicle[v] || []; byVehicle[v].push(s); });
+    for (const v of Object.keys(byVehicle)) {
+      await apiPost('unholdSeats', { packageId: pkg.id, vehicleName: v, seats: byVehicle[v] });
+    }
+    showToast('সীট আনহোল্ড করা হয়েছে', 'success');
     overlay.remove();
     loadBookingsForPackage(pkg.id, pkg);
   });
@@ -646,12 +738,12 @@ async function renderReportsTab() {
       <div class="stat-card gold"><div class="label">মোট আয় (জমা)</div><div class="value">${formatTaka(r.totalIncome)}</div></div>
       <div class="stat-card red"><div class="label">মোট বকেয়া</div><div class="value">${formatTaka(r.totalDue)}</div></div>
       <div class="stat-card red"><div class="label">মোট ব্যয়</div><div class="value">${formatTaka(r.totalExpense)}</div></div>
-      <div class="stat-card"><div class="label">নীট মুনাফা</div><div class="value">${formatTaka(r.netProfit)}</div></div>
+      <div class="stat-card"><div class="label">${r.netProfit >= 0 ? 'নীট লাভ' : 'নীট লোকসান'}</div><div class="value" style="color:${r.netProfit >= 0 ? 'var(--forest)' : 'var(--red)'};">${formatTaka(Math.abs(r.netProfit))} ${r.netProfit >= 0 ? '(লাভ)' : '(লস)'}</div></div>
     </div>
 
     <div class="flex-between"><h3>প্যাকেজ ভিত্তিক আয়-ব্যয়</h3></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>স্পট</th><th>বুকিং</th><th>আয়</th><th>ব্যয়</th><th>বকেয়া</th><th>নীট মুনাফা</th><th>প্রিন্ট</th></tr></thead>
+      <thead><tr><th>স্পট</th><th>বুকিং</th><th>আয়</th><th>ব্যয়</th><th>বকেয়া</th><th>ফলাফল</th><th>প্রিন্ট</th></tr></thead>
       <tbody>
         ${r.perPackage.map(p => `
           <tr>
@@ -660,7 +752,7 @@ async function renderReportsTab() {
             <td>${formatTaka(p.totalIncome)}</td>
             <td>${formatTaka(p.totalExpense)}</td>
             <td>${formatTaka(p.totalDue)}</td>
-            <td style="font-weight:700; color:${p.netProfit >= 0 ? 'var(--forest)' : 'var(--red)'};">${formatTaka(p.netProfit)}</td>
+            <td style="font-weight:700; color:${p.netProfit >= 0 ? 'var(--forest)' : 'var(--red)'};">${formatTaka(Math.abs(p.netProfit))} ${p.netProfit >= 0 ? '(লাভ)' : '(লস)'}</td>
             <td><button class="btn btn-sm btn-outline-forest print-one-report-btn" data-id="${p.packageId}" data-name="${escapeHtml(p.spotName)}">🖨️</button></td>
           </tr>
         `).join('') || '<tr><td colspan="7" class="text-center text-muted">কোনো তথ্য নেই</td></tr>'}
@@ -678,7 +770,9 @@ async function renderReportsTab() {
 function printReport(overall, singlePkg) {
   const win = window.open('', '_blank');
   const rows = singlePkg ? [singlePkg] : overall.perPackage;
-  const title = singlePkg ? 'আয়-ব্যয় রিপোর্ট — ' + singlePkg.spotName : 'সার্বিক আয়-ব্যয় রিপোর্ট (সব প্যাকেজ)';
+  const title = singlePkg ? 'আয়-ব্যয় রিপোর্ট — ' + singlePkg.spotName : 'সার্বিক আয়-ব্যয় রিপোর্ট (সব প্যাকেজ একসাথে)';
+
+  const resultCell = (p) => `<span style="color:${p.netProfit >= 0 ? '#1B4332' : '#B3413B'}; font-weight:bold;">${formatTaka(Math.abs(p.netProfit))} ${p.netProfit >= 0 ? '(লাভ)' : '(লস)'}</span>`;
 
   win.document.write(`
     <html><head><meta charset="UTF-8"><title>${title}</title>
@@ -687,23 +781,22 @@ function printReport(overall, singlePkg) {
       table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
       th, td { border:1px solid #999; padding:8px 10px; text-align:left; }
       th { background:#eee; }
-      .totals { margin-top:20px; font-size:15px; }
+      .totals { margin-top:20px; font-size:16px; padding:14px; border:2px solid #1B4332; border-radius:8px; }
     </style></head>
     <body>
       <h2>${title}</h2>
       <table>
-        <thead><tr><th>স্পট</th><th>বুকিং সংখ্যা</th><th>মোট আয়</th><th>মোট ব্যয়</th><th>বকেয়া</th><th>নীট মুনাফা</th></tr></thead>
+        <thead><tr><th>স্পট</th><th>বুকিং সংখ্যা</th><th>মোট আয়</th><th>মোট ব্যয়</th><th>বকেয়া</th><th>ফলাফল</th></tr></thead>
         <tbody>
-          ${rows.map(p => `<tr><td>${escapeHtml(p.spotName)}</td><td>${toBengaliNumber(p.bookings)}</td><td>${formatTaka(p.totalIncome)}</td><td>${formatTaka(p.totalExpense)}</td><td>${formatTaka(p.totalDue)}</td><td>${formatTaka(p.netProfit)}</td></tr>`).join('')}
+          ${rows.map(p => `<tr><td>${escapeHtml(p.spotName)}</td><td>${toBengaliNumber(p.bookings)}</td><td>${formatTaka(p.totalIncome)}</td><td>${formatTaka(p.totalExpense)}</td><td>${formatTaka(p.totalDue)}</td><td>${resultCell(p)}</td></tr>`).join('')}
         </tbody>
       </table>
-      ${!singlePkg ? `
       <div class="totals">
-        <strong>সর্বমোট আয়:</strong> ${formatTaka(overall.totalIncome)} &nbsp;&nbsp;
-        <strong>সর্বমোট ব্যয়:</strong> ${formatTaka(overall.totalExpense)} &nbsp;&nbsp;
-        <strong>সর্বমোট বকেয়া:</strong> ${formatTaka(overall.totalDue)} &nbsp;&nbsp;
-        <strong>নীট মুনাফা:</strong> ${formatTaka(overall.netProfit)}
-      </div>` : ''}
+        <strong>সর্বমোট আয়:</strong> ${formatTaka(singlePkg ? singlePkg.totalIncome : overall.totalIncome)} &nbsp;&nbsp;
+        <strong>সর্বমোট ব্যয়:</strong> ${formatTaka(singlePkg ? singlePkg.totalExpense : overall.totalExpense)} &nbsp;&nbsp;
+        <strong>সর্বমোট বকেয়া:</strong> ${formatTaka(singlePkg ? singlePkg.totalDue : overall.totalDue)} &nbsp;&nbsp;
+        <strong>সর্বমোট ফলাফল:</strong> ${resultCell({ netProfit: singlePkg ? singlePkg.netProfit : overall.netProfit })}
+      </div>
       <script>window.onload = () => window.print();<\/script>
     </body></html>
   `);

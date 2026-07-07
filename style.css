@@ -403,6 +403,7 @@ legend {
 /* ---------- সিট ম্যাপ ---------- */
 
 .vehicle-block {
+  width: 400px;
   margin-bottom: 24px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -425,6 +426,7 @@ legend {
   gap: 10px 0;
   padding: 18px;
   background: white;
+  padding-left: 50px;
 }
 
 .seat-row {
@@ -441,8 +443,13 @@ legend {
 }
 
 .seat-row .aisle-gap {
-  width: 28px;
+  width: 52px;
   flex-shrink: 0;
+}
+
+.seat-row .aisle-gap.aisle-gap-seat {
+  width: 52px;
+  display: flex;
 }
 
 .seat {

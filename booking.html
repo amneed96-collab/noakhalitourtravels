@@ -41,6 +41,7 @@ const pkgIdentifier = params.get('pkg');
 let currentPackage = null;
 let currentSeats = [];
 let selectedSeats = []; // [{vehicleName, seatNo}]
+let adminNames = [];
 
 async function init() {
   const content = qs('#page-content');
@@ -50,10 +51,14 @@ async function init() {
   }
   try {
     // একটাই কল - প্যাকেজ + সীট একসাথে (দ্রুত লোড)
-    const res = await apiGet('getPackageFull', { id: pkgIdentifier }, { noCache: true });
+    const [res, adminRes] = await Promise.all([
+      apiGet('getPackageFull', { id: pkgIdentifier }, { noCache: true }),
+      apiGet('getAdminNames', null, { noCache: true }).catch(() => ({ ok: false }))
+    ]);
     if (!res.ok || !res.data || !res.data.package) throw new Error('প্যাকেজ পাওয়া যায়নি');
     currentPackage = res.data.package;
     currentSeats = res.data.seats;
+    adminNames = (adminRes && adminRes.ok) ? adminRes.data : [];
     render();
   } catch (err) {
     content.innerHTML = '<div class="empty-state">লোড করতে সমস্যা: ' + err.message + '</div>';
@@ -98,13 +103,23 @@ function render() {
               <select name="paymentMethod" id="payment-method-select">
                 <option value="bkash">📱 বিকাশ</option>
                 <option value="nagad">📱 নগদ</option>
-                <option value="cash">💵 হাতে হাতে / নগদ পরিশোধ</option>
+                <option value="cash">💵 হাতে হাতে / সরাসরি পরিশোধ</option>
               </select>
+              <div id="payment-number-box" class="mt-24" style="margin-top:12px; padding:12px 16px; background:var(--cream-dark); border-radius:9px; display:none;">
+                <div class="text-muted" style="font-size:0.85rem; margin-bottom:4px;" id="payment-number-label"></div>
+                <a href="#" id="payment-number-link" style="font-weight:700; font-size:1.1rem; color:var(--forest);" target="_blank"></a>
+              </div>
             </div>
             <div class="form-group" id="transaction-id-group" style="display:none;">
               <label>ট্রানজেকশন আইডি (বিকাশ/নগদ) *</label>
               <input type="text" name="transactionId" id="transaction-id-input" placeholder="যেমন: 8N7A2X9K1M">
-              <div class="hint">বিকাশ/নগদ থেকে পাঠানো এসএমএস-এ থাকা ট্রানজেকশন আইডিটি বসান</div>
+              <div class="hint">উপরের নাম্বারে টাকা পাঠিয়ে এসএমএস-এ পাওয়া ট্রানজেকশন আইডিটি এখানে বসান</div>
+            </div>
+            <div class="form-group" id="received-by-group" style="display:none;">
+              <label>কার কাছে টাকা জমা দিয়েছেন? *</label>
+              <select name="receivedBy" id="received-by-select">
+                <option value="">-- নির্বাচন করুন --</option>
+              </select>
             </div>
             <div class="form-group"><label>বকেয়া থাকবে</label><input type="text" id="due-display" readonly value="${formatTaka(0)}" style="background:var(--cream-dark); color:var(--red); font-weight:700;"></div>
             <button type="submit" class="btn btn-primary btn-block" id="submit-btn" disabled>সীট নির্বাচন করুন</button>
@@ -115,6 +130,14 @@ function render() {
   `;
 
   renderVehicles();
+
+  const receivedBySelect = qs('#received-by-select');
+  adminNames.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.name;
+    opt.textContent = a.name + (a.role === 'admin' ? ' (প্রধান এডমিন)' : ' (সহকারী এডমিন)');
+    receivedBySelect.appendChild(opt);
+  });
 
   qs('#paid-input').addEventListener('input', updateFeeDisplay);
   qs('#booking-form').addEventListener('submit', submitBooking);
@@ -136,26 +159,45 @@ function updateFeeDisplay() {
   const txnGroup = qs('#transaction-id-group');
   const methodSelect = qs('#payment-method-select');
   const txnInput = qs('#transaction-id-input');
+  const numberBox = qs('#payment-number-box');
+  const numberLabel = qs('#payment-number-label');
+  const numberLink = qs('#payment-number-link');
+  const receivedByGroup = qs('#received-by-group');
+  const receivedBySelect = qs('#received-by-select');
 
   if (paid > 0) {
     methodGroup.style.display = '';
-    updateTxnVisibility();
+    receivedByGroup.style.display = '';
+    receivedBySelect.required = true;
+    updatePaymentUI();
   } else {
     methodGroup.style.display = 'none';
     txnGroup.style.display = 'none';
+    numberBox.style.display = 'none';
     txnInput.required = false;
+    receivedByGroup.style.display = 'none';
+    receivedBySelect.required = false;
   }
 
-  function updateTxnVisibility() {
-    if (methodSelect.value === 'cash') {
+  function updatePaymentUI() {
+    const method = methodSelect.value;
+    if (method === 'cash') {
       txnGroup.style.display = 'none';
+      numberBox.style.display = 'none';
       txnInput.required = false;
     } else {
       txnGroup.style.display = '';
       txnInput.required = true;
+      numberBox.style.display = '';
+      const number = method === 'bkash' ? SITE_CONFIG.bkashNumber : SITE_CONFIG.nagadNumber;
+      const appName = method === 'bkash' ? 'বিকাশ' : 'নগদ';
+      numberLabel.textContent = `এই ${appName} নাম্বারে "সেন্ড মানি" করুন (নাম্বারে ক্লিক করলে ${appName} অ্যাপ খুলে যাবে):`;
+      numberLink.textContent = '📲 ' + number;
+      // মোবাইলে ক্লিক করলে ডায়াল/অ্যাপ ওপেন হওয়ার চেষ্টা করবে (bKash/Nagad-এর কোনো অফিসিয়াল ওয়েব ডিপ-লিংক নেই, তাই tel: ব্যবহার করা হলো যা নাম্বারটি কল/কপি করতে সাহায্য করে)
+      numberLink.href = 'tel:' + number;
     }
   }
-  methodSelect.onchange = updateTxnVisibility;
+  methodSelect.onchange = updatePaymentUI;
 }
 
 function renderVehicles() {
@@ -215,6 +257,17 @@ function renderSeatRows(vehicleName, vSeats) {
   }
 
   return rows.map(row => {
+    if (row.length === 5) {
+      // ৫ম (বাড়তি) সীটটি মাঝের গ্যাপ বরাবর, ৩নং সীটের ঠিক নিচে বসবে
+      const firstPair = row.slice(0, 2);
+      const restPair = row.slice(2, 4);
+      const extraSeat = row[4];
+      return `<div class="seat-row">
+        <div class="seat-pair">${firstPair.map(s => renderSeat(vehicleName, s)).join('')}</div>
+        <div class="aisle-gap aisle-gap-seat">${renderSeat(vehicleName, extraSeat)}</div>
+        <div class="seat-pair">${restPair.map(s => renderSeat(vehicleName, s)).join('')}</div>
+      </div>`;
+    }
     if (row.length >= 4) {
       const firstPair = row.slice(0, 2);
       const restPair = row.slice(2);
@@ -265,9 +318,14 @@ async function submitBooking(e) {
   const paidAmount0 = Number(fd0.get('paidAmount')) || 0;
   const paymentMethod = fd0.get('paymentMethod') || '';
   const transactionId = (fd0.get('transactionId') || '').trim();
+  const receivedBy = fd0.get('receivedBy') || '';
 
   if (paidAmount0 > 0 && paymentMethod !== 'cash' && !transactionId) {
     showToast('বিকাশ/নগদে পেমেন্ট করলে ট্রানজেকশন আইডি দিন', 'error');
+    return;
+  }
+  if (paidAmount0 > 0 && !receivedBy) {
+    showToast('কার কাছে টাকা জমা দিয়েছেন তা নির্বাচন করুন', 'error');
     return;
   }
 
@@ -290,7 +348,8 @@ async function submitBooking(e) {
       delegateFee: currentPackage.delegateFee,
       paidAmount,
       paymentMethod: paidAmount > 0 ? paymentMethod : '',
-      transactionId: paidAmount > 0 ? transactionId : ''
+      transactionId: paidAmount > 0 ? transactionId : '',
+      receivedBy: paidAmount > 0 ? receivedBy : ''
     });
 
     if (!res.ok) {

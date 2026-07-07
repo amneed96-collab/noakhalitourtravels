@@ -79,7 +79,7 @@ async function loadPackages() {
     // একটাই API কল - সব প্যাকেজ ও সীট সামারি একসাথে (দ্রুত লোড)
     const res = await apiGet('getPackagesSummary');
     if (!res.ok) throw new Error(res.error);
-    const packages = res.data.filter(p => p.status === 'active');
+    const packages = res.data.filter(p => p.status === 'active' && !p.isPast);
 
     if (packages.length === 0) {
       listEl.innerHTML = '<div class="empty-state">এই মুহূর্তে কোনো সক্রিয় ট্যুর প্যাকেজ নেই। শীঘ্রই নতুন প্যাকেজ আসছে!</div>';
