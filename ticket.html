@@ -16,7 +16,10 @@
       <div class="brand-mark">🧳</div>
       <div class="brand-name js-group-name"></div>
     </div>
-    <nav class="header-nav"><a href="index.html">← প্যাকেজ সমূহ</a></nav>
+    <nav class="header-nav">
+      <a href="index.html">প্যাকেজ সমূহ</a>
+      <a href="contact.html">যোগাযোগ</a>
+    </nav>
   <button class="hamburger-btn no-print" aria-label="মেনু"><span></span><span></span><span></span></button>
   </div>
 </header>
@@ -44,7 +47,12 @@
 </section>
 
 <footer class="site-footer no-print">
-  <div class="container"><div class="js-group-name"></div></div>
+  <div class="container">
+    <div class="footer-bottom">
+      <div class="js-group-name"></div>
+      <span class="js-powered-by"></span>
+    </div>
+  </div>
 </footer>
 
 <script src="config.js"></script>
@@ -81,10 +89,12 @@ qs('#search-form').addEventListener('submit', async (e) => {
 
 function renderTicket(b) {
   const seatList = (b.seats || []).map(s => s.vehicleName + '-' + s.seatNo).join(', ');
+  const logoImg = SITE_CONFIG.logoUrl ? `<img src="${escapeHtml(SITE_CONFIG.logoUrl)}" class="ticket-logo" alt="logo">` : '';
   return `
     <div class="ticket-card">
       <div class="ticket-header">
-        <div class="ticket-group-name js-group-name"></div>
+        ${logoImg}
+        <div class="ticket-group-name js-group-name-bn"></div>
         <div class="ticket-status">✅ কনফার্মড</div>
       </div>
       <div class="ticket-body">
@@ -99,8 +109,7 @@ function renderTicket(b) {
         <div class="ticket-row"><span>বকেয়া</span><strong style="color:${Number(b.dueAmount) > 0 ? 'var(--red)' : 'var(--forest)'};">${formatTaka(b.dueAmount)}</strong></div>
       </div>
       <div class="ticket-footer">
-        <div>${escapeHtml(SITE_CONFIG.ticketAdminName)}: ${escapeHtml(SITE_CONFIG.ticketAdminPhone)}</div>
-        <div class="ticket-credit">${escapeHtml(SITE_CONFIG.ticketFooterCredit)}</div>
+        <div class="ticket-credit">${escapeHtml(SITE_CONFIG.poweredByLine)}</div>
       </div>
       <div class="no-print" style="text-align:center; margin-top:10px;">
         <button class="btn btn-sm btn-outline-forest print-single-btn">🖨️ শুধু এই টিকেট প্রিন্ট</button>

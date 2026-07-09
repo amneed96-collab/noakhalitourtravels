@@ -26,6 +26,7 @@
     <nav class="header-nav">
       <a href="index.html">প্যাকেজ সমূহ</a>
       <a href="ticket.html">টিকেট দেখুন</a>
+      <a href="contact.html">যোগাযোগ</a>
       <a href="admin.html">এডমিন লগইন</a>
     </nav>
     <button class="hamburger-btn" aria-label="মেনু"><span></span><span></span><span></span></button>
@@ -37,6 +38,7 @@
     <span class="eyebrow">🇧🇩 বাংলাদেশ ভ্রমণ</span>
     <h1>নতুন গন্তব্যে যাত্রা শুরু হোক আমাদের সাথে</h1>
     <p>প্রতিটি ট্যুরে আসন সংরক্ষিত, স্বচ্ছ হিসাব, এবং নির্ভরযোগ্য আয়োজন। নিচে থেকে আপনার পছন্দের ট্যুর বেছে বুকিং দিন।</p>
+    <div class="pkg-count-strip" id="pkg-count-strip"></div>
   </div>
 </section>
 
@@ -52,10 +54,28 @@
 
 <footer class="site-footer">
   <div class="container">
-    <div class="js-group-name">নোয়াখালী ট্যুর ট্রাভেল্স</div>
-    <div class="social-links" id="social-links"></div>
-    <div style="margin-top:14px; opacity:0.8; font-weight:600;" class="js-footer-line">@AMShahed: 01605721296</div>
-    <div style="margin-top:6px; opacity:0.6; font-size:0.8rem;">© <span id="year"></span> সর্বস্বত্ব সংরক্ষিত</div>
+    <div class="footer-grid">
+      <div>
+        <div class="footer-col-title">সামাজিক মাধ্যম</div>
+        <div class="js-social-links"></div>
+      </div>
+      <div>
+        <div class="footer-col-title">এডমিনদের সাথে যোগাযোগ</div>
+        <div class="footer-admin-contacts" id="footer-admin-contacts"></div>
+      </div>
+      <div>
+        <div class="footer-col-title">লিংক</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <a href="contact.html" style="color:var(--cream); opacity:0.85;">যোগাযোগ পেজ</a>
+          <a href="ticket.html" style="color:var(--cream); opacity:0.85;">টিকেট দেখুন</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="js-group-name"></div>
+      <div style="margin-top:6px; opacity:0.6; font-size:0.8rem;">© <span id="year"></span> সর্বস্বত্ব সংরক্ষিত</div>
+      <span class="js-powered-by"></span>
+    </div>
   </div>
 </footer>
 
@@ -64,14 +84,38 @@
 <script>
 qs('#year').textContent = new Date().getFullYear();
 
-if (SITE_CONFIG.facebookUrl) {
-  const social = qs('#social-links');
-  const a = document.createElement('a');
-  a.href = SITE_CONFIG.facebookUrl;
-  a.target = '_blank';
-  a.textContent = '📘 ফেসবুক পেজ';
-  social.appendChild(a);
+async function loadFooterAdmins() {
+  try {
+    const res = await apiGet('getTeamContacts');
+    if (!res.ok) return;
+    const admins = res.data.filter(a => a.role === 'admin');
+    const container = qs('#footer-admin-contacts');
+    container.innerHTML = admins.map(a => `
+      <div class="footer-admin-card">
+        ${a.photoUrl ? `<img class="footer-admin-photo" src="${escapeHtml(a.photoUrl)}" alt="${escapeHtml(a.name)}">` : '<div class="footer-admin-photo"></div>'}
+        <div class="footer-admin-info">
+          <div class="name">${escapeHtml(a.name)}</div>
+          ${a.mobile ? `<div>📞 ${escapeHtml(a.mobile)}</div>` : ''}
+          ${a.email ? `<div>✉️ ${escapeHtml(a.email)}</div>` : ''}
+        </div>
+      </div>
+    `).join('') || '<span class="text-muted">তথ্য পাওয়া যায়নি</span>';
+  } catch (err) { /* নীরবে ব্যর্থ, ফুটার খালি থাকবে */ }
 }
+loadFooterAdmins();
+
+async function loadPackageCounts() {
+  try {
+    const res = await apiGet('getPackageCounts');
+    if (!res.ok) return;
+    const c = res.data;
+    qs('#pkg-count-strip').innerHTML = `
+      <div class="pkg-count-item"><strong>${toBengaliNumber(c.running)}</strong> টি চলমান প্যাকেজ</div>
+      <div class="pkg-count-item"><strong>${toBengaliNumber(c.completed)}</strong> টি সম্পন্ন হয়েছে</div>
+    `;
+  } catch (err) { /* নীরবে ব্যর্থ */ }
+}
+loadPackageCounts();
 
 async function loadPackages() {
   const listEl = qs('#pkg-list');

@@ -33,12 +33,12 @@
       </div>
     </div>
     <nav class="admin-nav" id="admin-nav">
-      <a href="#" data-tab="packages" class="active">📦 প্যাকেজ সমূহ</a>
-      <a href="#" data-tab="new-package">➕ নতুন প্যাকেজ</a>
+      <a href="#" data-tab="packages" class="active admin-only">📦 প্যাকেজ সমূহ</a>
+      <a href="#" data-tab="new-package" class="admin-only">➕ নতুন প্যাকেজ</a>
       <a href="#" data-tab="bookings">🎫 বুকিং ব্যবস্থাপনা</a>
       <a href="#" data-tab="expenses">💸 খরচ এন্ট্রি</a>
       <a href="#" data-tab="reports" class="admin-only">📊 আয়-ব্যয় রিপোর্ট</a>
-      <a href="#" data-tab="admins" class="admin-only">👥 এডমিন ব্যবস্থাপনা</a>
+      <a href="#" data-tab="admins" class="admin-only">👥 টিম ব্যবস্থাপনা</a>
       <a href="#" id="logout-link" style="margin-top:20px; opacity:0.6;">🚪 লগআউট</a>
     </nav>
   </aside>
@@ -55,11 +55,19 @@ function checkSession() {
     qs('#login-screen').style.display = 'none';
     qs('#admin-shell').style.display = 'flex';
     qs('#sidebar-user').textContent = session.name + ' (' + roleLabel(session.role) + ')';
-    if (session.role !== 'admin') qsa('.admin-only').forEach(el => el.style.display = 'none');
-    loadTab('packages');
+    if (session.role !== 'admin') {
+      qsa('.admin-only').forEach(el => el.style.display = 'none');
+      qsa('.admin-nav a').forEach(x => x.classList.remove('active'));
+      qs('[data-tab="bookings"]').classList.add('active');
+      loadTab('bookings');
+    } else {
+      loadTab('packages');
+    }
   }
 }
-function roleLabel(role) { return role === 'admin' ? 'প্রধান এডমিন' : 'সহকারী এডমিন'; }
+function roleLabel(role) {
+  return { admin: 'এডমিন', moderator: 'মডারেটর', host: 'হোস্ট' }[role] || role;
+}
 
 qs('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -305,11 +313,13 @@ async function openBookingSheetPrint(pkg) {
       body { font-family: 'Hind Siliguri', sans-serif; padding: 30px; }
       h2 { margin-bottom: 4px; }
       .meta { color: #555; margin-bottom: 20px; font-size: 14px; }
+      .print-footer { margin-top: 30px; text-align:center; font-size: 11px; color: #999; }
     </style></head>
     <body>
       <h2>প্যাকেজ ভিত্তিক বুকিং শীট — ${escapeHtml(pkg.spotName)}</h2>
       <div class="meta">${formatDate(pkg.startDate)} — ${formatDate(pkg.endDate)} · মোট ডেলিগেট: ${toBengaliNumber(pkg.delegateCount)} জন · জনপ্রতি ফি: ${formatTaka(pkg.delegateFee)}</div>
       ${rowsHtml}
+      <div class="print-footer">${escapeHtml(SITE_CONFIG.poweredByLine)}</div>
       <script>window.onload = () => window.print();<\/script>
     </body></html>
   `);
@@ -721,7 +731,7 @@ async function loadExpensesForPackage(pkgId) {
 
 async function renderReportsTab() {
   const session = Session.get();
-  if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু প্রধান এডমিনের জন্য।</div>'; return; }
+  if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু এডমিনের জন্য।</div>'; return; }
 
   const main = qs('#admin-main');
   const res = await apiGet('getOverallReport', null, { noCache: true });
@@ -782,6 +792,7 @@ function printReport(overall, singlePkg) {
       th, td { border:1px solid #999; padding:8px 10px; text-align:left; }
       th { background:#eee; }
       .totals { margin-top:20px; font-size:16px; padding:14px; border:2px solid #1B4332; border-radius:8px; }
+      .print-footer { margin-top: 30px; text-align:center; font-size: 11px; color: #999; }
     </style></head>
     <body>
       <h2>${title}</h2>
@@ -797,6 +808,7 @@ function printReport(overall, singlePkg) {
         <strong>সর্বমোট বকেয়া:</strong> ${formatTaka(singlePkg ? singlePkg.totalDue : overall.totalDue)} &nbsp;&nbsp;
         <strong>সর্বমোট ফলাফল:</strong> ${resultCell({ netProfit: singlePkg ? singlePkg.netProfit : overall.netProfit })}
       </div>
+      <div class="print-footer">${escapeHtml(SITE_CONFIG.poweredByLine)}</div>
       <script>window.onload = () => window.print();<\/script>
     </body></html>
   `);
@@ -809,16 +821,16 @@ function printReport(overall, singlePkg) {
 
 async function renderAdminsTab() {
   const session = Session.get();
-  if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু প্রধান এডমিনের জন্য।</div>'; return; }
+  if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু এডমিনের জন্য।</div>'; return; }
 
   const main = qs('#admin-main');
   const res = await apiPost('getAdmins', {});
   const admins = res.ok ? res.data : [];
 
   main.innerHTML = `
-    <h2>এডমিন ও সহকারী ব্যবস্থাপনা</h2>
-    <div class="form-card" style="max-width:520px; margin-bottom:24px;">
-      <h3 style="margin-top:0;">নতুন সহকারী এডমিন যোগ করুন</h3>
+    <h2>টিম ব্যবস্থাপনা (এডমিন / মডারেটর / হোস্ট)</h2>
+    <div class="form-card" style="max-width:620px; margin-bottom:24px;">
+      <h3 style="margin-top:0;">নতুন সদস্য যোগ করুন</h3>
       <form id="admin-form">
         <div class="form-row">
           <div class="form-group"><label>ইউজারনেম *</label><input type="text" name="username" required></div>
@@ -826,19 +838,31 @@ async function renderAdminsTab() {
         </div>
         <div class="form-row">
           <div class="form-group"><label>নাম *</label><input type="text" name="name" required></div>
-          <div class="form-group"><label>ভূমিকা</label>
-            <select name="role"><option value="co-admin">সহকারী এডমিন</option><option value="admin">প্রধান এডমিন</option></select>
+          <div class="form-group"><label>ভূমিকা *</label>
+            <select name="role">
+              <option value="admin">এডমিন (সব করতে পারবে)</option>
+              <option value="moderator">মডারেটর (বুকিং ও খরচ)</option>
+              <option value="host">হোস্ট (বুকিং ও খরচ)</option>
+            </select>
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group"><label>মোবাইল নম্বর</label><input type="tel" name="mobile" placeholder="01XXXXXXXXX"></div>
+          <div class="form-group"><label>ইমেইল</label><input type="email" name="email" placeholder="name@example.com"></div>
+        </div>
+        <div class="form-group"><label>ঠিকানা</label><input type="text" name="address" placeholder="বর্তমান ঠিকানা"></div>
+        <div class="form-group"><label>ছবির লিংক (URL)</label><input type="url" name="photoUrl" placeholder="https://..."><div class="hint">গুগল ড্রাইভ/ইমগুর ইত্যাদিতে ছবি আপলোড করে সরাসরি লিংক এখানে বসান</div></div>
         <button type="submit" class="btn btn-primary">যোগ করুন</button>
       </form>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>ইউজারনেম</th><th>নাম</th><th>ভূমিকা</th><th>সক্রিয়</th><th></th></tr></thead>
+      <thead><tr><th>ছবি</th><th>ইউজারনেম</th><th>নাম</th><th>ভূমিকা</th><th>মোবাইল</th><th>ইমেইল</th><th>সক্রিয়</th><th></th></tr></thead>
       <tbody>
         ${admins.map(a => `
           <tr>
-            <td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.name)}</td><td>${roleLabel(a.role)}</td><td>${a.active ? '✅' : '❌'}</td>
+            <td>${a.photoUrl ? `<img src="${escapeHtml(a.photoUrl)}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;">` : '👤'}</td>
+            <td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.name)}</td><td>${roleLabel(a.role)}</td>
+            <td>${escapeHtml(a.mobile || '')}</td><td>${escapeHtml(a.email || '')}</td><td>${a.active ? '✅' : '❌'}</td>
             <td>${a.username !== session.username ? `<button class="btn btn-sm btn-danger del-admin-btn" data-username="${a.username}">✕ মুছুন</button>` : '<span class="text-muted">(আপনি)</span>'}</td>
           </tr>
         `).join('')}
@@ -849,13 +873,17 @@ async function renderAdminsTab() {
   qs('#admin-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const res = await apiPost('manageAdmin', { mode: 'add', username: fd.get('username'), password: fd.get('password'), name: fd.get('name'), role: fd.get('role') });
+    const res = await apiPost('manageAdmin', {
+      mode: 'add', username: fd.get('username'), password: fd.get('password'), name: fd.get('name'),
+      role: fd.get('role'), mobile: fd.get('mobile'), email: fd.get('email'),
+      address: fd.get('address'), photoUrl: fd.get('photoUrl')
+    });
     if (res.ok) { showToast('যোগ করা হয়েছে', 'success'); renderAdminsTab(); }
     else showToast(res.error, 'error');
   });
 
   qsa('.del-admin-btn').forEach(btn => btn.addEventListener('click', async () => {
-    if (!confirm('এই এডমিনকে মুছে ফেলতে চান?')) return;
+    if (!confirm('এই সদস্যকে মুছে ফেলতে চান?')) return;
     const res = await apiPost('manageAdmin', { mode: 'delete', username: btn.dataset.username });
     if (res.ok) { showToast('মুছে ফেলা হয়েছে', 'success'); renderAdminsTab(); }
   }));

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>যোগাযোগ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="top-strip"><div class="container"><span class="js-header-admin-line"></span></div></div>
+
+<header class="site-header">
+  <div class="container">
+    <div class="brand">
+      <div class="brand-mark">🧳</div>
+      <div class="brand-name js-group-name"></div>
+    </div>
+    <nav class="header-nav">
+      <a href="index.html">প্যাকেজ সমূহ</a>
+      <a href="ticket.html">টিকেট দেখুন</a>
+      <a href="contact.html">যোগাযোগ</a>
+      <a href="admin.html">এডমিন লগইন</a>
+    </nav>
+    <button class="hamburger-btn" aria-label="মেনু"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container">
+    <div class="section-title">
+      <h2>👥 যোগাযোগ করুন</h2>
+      <p>বুকিং বা যেকোনো প্রয়োজনে আমাদের টিমের সাথে সরাসরি যোগাযোগ করুন</p>
+    </div>
+
+    <div id="contact-groups"><div class="spinner"></div></div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-col-title">সামাজিক মাধ্যম</div>
+        <div class="js-social-links"></div>
+      </div>
+      <div>
+        <div class="footer-col-title">এডমিনদের সাথে যোগাযোগ</div>
+        <div class="footer-admin-contacts" id="footer-admin-contacts"></div>
+      </div>
+      <div>
+        <div class="footer-col-title">লিংক</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <a href="index.html" style="color:var(--cream); opacity:0.85;">প্যাকেজ সমূহ</a>
+          <a href="ticket.html" style="color:var(--cream); opacity:0.85;">টিকেট দেখুন</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="js-group-name"></div>
+      <div style="margin-top:6px; opacity:0.6; font-size:0.8rem;">© <span id="year"></span> সর্বস্বত্ব সংরক্ষিত</div>
+      <span class="js-powered-by"></span>
+    </div>
+  </div>
+</footer>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+qs('#year').textContent = new Date().getFullYear();
+
+async function loadFooterAdmins() {
+  try {
+    const res = await apiGet('getTeamContacts');
+    if (!res.ok) return;
+    const admins = res.data.filter(a => a.role === 'admin');
+    const container = qs('#footer-admin-contacts');
+    container.innerHTML = admins.map(a => `
+      <div class="footer-admin-card">
+        ${a.photoUrl ? `<img class="footer-admin-photo" src="${escapeHtml(a.photoUrl)}" alt="${escapeHtml(a.name)}">` : '<div class="footer-admin-photo"></div>'}
+        <div class="footer-admin-info">
+          <div class="name">${escapeHtml(a.name)}</div>
+          ${a.mobile ? `<div>📞 ${escapeHtml(a.mobile)}</div>` : ''}
+          ${a.email ? `<div>✉️ ${escapeHtml(a.email)}</div>` : ''}
+        </div>
+      </div>
+    `).join('') || '<span class="text-muted">তথ্য পাওয়া যায়নি</span>';
+  } catch (err) {}
+}
+loadFooterAdmins();
+
+const ROLE_ORDER = ['admin', 'moderator', 'host'];
+const ROLE_TITLES = { admin: '১. এডমিন', moderator: '২. মডারেটর', host: '৩. হোস্ট' };
+const ROLE_DESC = {
+  admin: 'সব ধরনের সিদ্ধান্ত ও ব্যবস্থাপনার দায়িত্বে',
+  moderator: 'বুকিং ব্যবস্থাপনা ও খরচ এন্ট্রির দায়িত্বে',
+  host: 'বুকিং ব্যবস্থাপনা ও খরচ এন্ট্রির দায়িত্বে'
+};
+
+async function loadContacts() {
+  const container = qs('#contact-groups');
+  try {
+    const res = await apiGet('getTeamContacts', null, { noCache: true });
+    if (!res.ok) throw new Error(res.error);
+    const people = res.data;
+
+    container.innerHTML = ROLE_ORDER.map(role => {
+      const group = people.filter(p => p.role === role);
+      if (group.length === 0) return '';
+      return `
+        <div class="contact-group">
+          <h3 class="contact-group-title">${ROLE_TITLES[role]} <span class="text-muted" style="font-weight:400; font-size:0.85rem;">— ${ROLE_DESC[role]}</span></h3>
+          <div class="contact-card-grid">
+            ${group.map(renderContactCard).join('')}
+          </div>
+        </div>
+      `;
+    }).join('') || '<div class="empty-state">কোনো তথ্য পাওয়া যায়নি</div>';
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state">লোড করতে সমস্যা হয়েছে: ' + err.message + '</div>';
+  }
+}
+
+function renderContactCard(p) {
+  return `
+    <div class="contact-card">
+      ${p.photoUrl ? `<img class="contact-photo" src="${escapeHtml(p.photoUrl)}" alt="${escapeHtml(p.name)}">` : '<div class="contact-photo contact-photo-placeholder">👤</div>'}
+      <div class="contact-info">
+        <div class="contact-name">${escapeHtml(p.name)}</div>
+        ${p.mobile ? `<div class="contact-row">📞 <a href="tel:${escapeHtml(p.mobile)}">${escapeHtml(p.mobile)}</a></div>` : ''}
+        ${p.email ? `<div class="contact-row">✉️ <a href="mailto:${escapeHtml(p.email)}">${escapeHtml(p.email)}</a></div>` : ''}
+        ${p.address ? `<div class="contact-row">📍 ${escapeHtml(p.address)}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+loadContacts();
+</script>
+</body>
+</html>

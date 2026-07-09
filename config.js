@@ -10,25 +10,28 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbzai1VLFxw9PpcGRfsRbFu5EkFsLrjmyTLi0k0dt4YMHpdjgJV2V1xwKHMYi-uPvL5e/exec';
 
 const SITE_CONFIG = {
-  groupName: 'নোয়াখালী ট্যুর ট্রাভেল্স',
+  groupNameBn: 'ট্রাভেল গ্রুপ অফ নোয়াখালী',
+  groupNameEn: 'Travel Group of Noakhali',
   tagline: 'বাংলাদেশ ঘুরে দেখি, একসাথে',
+
+  // সোশ্যাল মিডিয়া লিংক (ফুটারে বাম পাশে দেখাবে)
   facebookUrl: 'https://web.facebook.com/abdul.momen.111408',
-  whatsappNumber: '01605721296',
-  phone: '01605721296',
+  youtubeUrl: '',
+  instagramUrl: '',
+
+  whatsappNumber: '01794709881',
+  phone: '01853302933',
 
   // লোগো - ছবির লিংক বসান (ফাঁকা রাখলে ডিফল্ট 🧳 আইকন দেখাবে)
-  logoUrl: '',
+logoUrl: 'https://drive.google.com/thumbnail?id=17-XQUHTUc_fvNQi16iKfVGg0xDFHmXMg&sz=w1000',
 
   // বিকাশ/নগদ নম্বর (বুকিং ফরমে দেখানো হবে)
-  bkashNumber: '01605721296',
-  nagadNumber: '01648-093805',
+  bkashNumber: '01794709881',
+  nagadNumber: '01794709881',
 
-  // হেডারে দেখানো এডমিন তথ্য
-  headerAdminLine: 'এডমিন- রবিউল হক ওয়াসিম: 01648-093805',
+  // হেডারে দেখানো তথ্য
+  headerAdminLine: 'এডমিন: মোহাম্মদ ওয়াসিম- 01794709881 / তাসিব- 01853302933',
 
-  // ফুটারে ও টিকেটে দেখানো তথ্য
-  footerLine: '@AMShahed: 01605721296',
-  ticketAdminName: 'রবিউল হক ওয়াসিম',
-  ticketAdminPhone: '01648-093805',
-  ticketFooterCredit: '@AMShahed: 01605721296'
+  // ফুটারে সবার নিচে ও প্রতিটি টিকেট/প্রিন্ট ফরমের নিচে দেখানো ক্রেডিট লাইন
+  poweredByLine: '@PowredBy: AMShahed-01605721296'
 };

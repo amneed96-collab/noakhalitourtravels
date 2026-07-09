@@ -72,10 +72,11 @@ function setupSheets() {
 
   const ad = getSheet(SHEET_NAMES.ADMINS);
   ad.clear();
-  ad.appendRow(['username', 'password', 'role', 'name', 'active']);
-  ad.appendRow(['admin', 'admin123', 'admin', 'প্রধান এডমিন', true]);
-  ad.appendRow(['assistant1', 'pass123', 'co-admin', 'সহকারী ১', true]);
-  ad.appendRow(['assistant2', 'pass123', 'co-admin', 'সহকারী ২', true]);
+  ad.appendRow(['username', 'password', 'role', 'name', 'mobile', 'email', 'address', 'photoUrl', 'active']);
+  ad.appendRow(['admin1', 'admin123', 'admin', 'এডমিন ১', '01700000001', '', '', '', true]);
+  ad.appendRow(['admin2', 'admin123', 'admin', 'এডমিন ২', '01700000002', '', '', '', true]);
+  ad.appendRow(['moderator1', 'pass123', 'moderator', 'মডারেটর ১', '01700000003', '', '', '', true]);
+  ad.appendRow(['host1', 'pass123', 'host', 'হোস্ট ১', '01700000004', '', '', '', true]);
 
   SpreadsheetApp.flush();
   return 'Setup সম্পন্ন হয়েছে!';
@@ -109,6 +110,10 @@ function doGet(e) {
         return jsonResponse({ ok: true, data: findTickets(e.parameter.name, e.parameter.mobile) });
       case 'getAdminNames':
         return jsonResponse({ ok: true, data: getAdminNames() });
+      case 'getTeamContacts':
+        return jsonResponse({ ok: true, data: getTeamContacts() });
+      case 'getPackageCounts':
+        return jsonResponse({ ok: true, data: getPackageCounts() });
       default:
         return jsonResponse({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -166,20 +171,37 @@ function login(username, password) {
   const admins = sheetToObjects(getSheet(SHEET_NAMES.ADMINS));
   const found = admins.find(a => a.username === username && String(a.password) === String(password) && a.active);
   if (!found) return { ok: false, error: 'ইউজারনেম বা পাসওয়ার্ড ভুল, অথবা একাউন্ট নিষ্ক্রিয়।' };
-  return { ok: true, data: { username: found.username, role: found.role, name: found.name } };
+  return {
+    ok: true,
+    data: {
+      username: found.username, role: found.role, name: found.name,
+      mobile: found.mobile, email: found.email, address: found.address, photoUrl: found.photoUrl
+    }
+  };
 }
 
 function getAdmins() {
   return sheetToObjects(getSheet(SHEET_NAMES.ADMINS)).map(a => ({
-    username: a.username, role: a.role, name: a.name, active: a.active
+    username: a.username, role: a.role, name: a.name,
+    mobile: a.mobile, email: a.email, address: a.address, photoUrl: a.photoUrl, active: a.active
   }));
 }
 
-// পাবলিক ব্যবহারের জন্য - শুধু সক্রিয় এডমিন/সহকারীদের নাম (বুকিং ফরমে "কার কাছে টাকা দিলেন" সিলেক্ট করতে)
+// পাবলিক ব্যবহারের জন্য - শুধু সক্রিয় এডমিন/মডারেটর/হোস্টদের নাম (বুকিং ফরমে "কার কাছে টাকা দিলেন" সিলেক্ট করতে)
 function getAdminNames() {
   return sheetToObjects(getSheet(SHEET_NAMES.ADMINS))
     .filter(a => a.active)
     .map(a => ({ username: a.username, name: a.name, role: a.role }));
+}
+
+// পাবলিক "যোগাযোগ" পেজের জন্য - নাম, মোবাইল, ইমেইল, ঠিকানা, ছবি (পাসওয়ার্ড বাদে)
+function getTeamContacts() {
+  return sheetToObjects(getSheet(SHEET_NAMES.ADMINS))
+    .filter(a => a.active)
+    .map(a => ({
+      name: a.name, role: a.role, mobile: a.mobile,
+      email: a.email, address: a.address, photoUrl: a.photoUrl
+    }));
 }
 
 function manageAdmin(body) {
@@ -189,7 +211,10 @@ function manageAdmin(body) {
   const usernameCol = headers.indexOf('username');
 
   if (body.mode === 'add') {
-    sheet.appendRow([body.username, body.password, body.role, body.name, true]);
+    sheet.appendRow([
+      body.username, body.password, body.role, body.name,
+      body.mobile || '', body.email || '', body.address || '', body.photoUrl || '', true
+    ]);
     SpreadsheetApp.flush();
     return { ok: true };
   }
@@ -200,6 +225,10 @@ function manageAdmin(body) {
         if (body.password) sheet.getRange(i + 1, headers.indexOf('password') + 1).setValue(body.password);
         if (body.role) sheet.getRange(i + 1, headers.indexOf('role') + 1).setValue(body.role);
         if (body.name) sheet.getRange(i + 1, headers.indexOf('name') + 1).setValue(body.name);
+        if (body.mobile !== undefined) sheet.getRange(i + 1, headers.indexOf('mobile') + 1).setValue(body.mobile);
+        if (body.email !== undefined) sheet.getRange(i + 1, headers.indexOf('email') + 1).setValue(body.email);
+        if (body.address !== undefined) sheet.getRange(i + 1, headers.indexOf('address') + 1).setValue(body.address);
+        if (body.photoUrl !== undefined) sheet.getRange(i + 1, headers.indexOf('photoUrl') + 1).setValue(body.photoUrl);
         if (body.active !== undefined) sheet.getRange(i + 1, headers.indexOf('active') + 1).setValue(body.active);
         SpreadsheetApp.flush();
         return { ok: true };
@@ -332,6 +361,21 @@ function getPackages() {
     p.vehicles = JSON.parse(p.vehicles || '[]');
     return p;
   });
+}
+
+// হোমপেজের উপরে দেখানোর জন্য - কতটি চলমান, কতটি সম্পন্ন
+function getPackageCounts() {
+  const packages = getPackages();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let running = 0, completed = 0;
+  packages.forEach(p => {
+    const endDate = p.endDate ? new Date(p.endDate) : null;
+    const isPast = endDate ? endDate < today : false;
+    if (isPast) completed++;
+    else if (p.status === 'active') running++;
+  });
+  return { running, completed, total: packages.length };
 }
 
 // একটি কল দিয়ে সব প্যাকেজ + সীট সামারি (হোমপেজের জন্য ফাস্ট)

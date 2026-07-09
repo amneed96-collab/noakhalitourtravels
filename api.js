@@ -101,14 +101,40 @@ function renderSiteHeaderFooter() {
   const adminLineEls = qsa('.js-header-admin-line');
   adminLineEls.forEach(el => el.textContent = SITE_CONFIG.headerAdminLine);
 
+  // গ্রুপের নাম - বাংলা ও ইংরেজি একসাথে
   const groupNameEls = qsa('.js-group-name');
-  groupNameEls.forEach(el => el.textContent = SITE_CONFIG.groupName);
+  groupNameEls.forEach(el => {
+    el.innerHTML = `${escapeHtml(SITE_CONFIG.groupNameBn)}<span class="group-name-en">${escapeHtml(SITE_CONFIG.groupNameEn)}</span>`;
+  });
 
-  const footerLineEls = qsa('.js-footer-line');
-  footerLineEls.forEach(el => el.textContent = SITE_CONFIG.footerLine);
+  // শুধু বাংলা নাম দরকার এমন জায়গার জন্য (যেমন টিকেট)
+  const groupNameBnEls = qsa('.js-group-name-bn');
+  groupNameBnEls.forEach(el => el.textContent = SITE_CONFIG.groupNameBn);
 
   const taglineEls = qsa('.js-tagline');
   taglineEls.forEach(el => el.textContent = SITE_CONFIG.tagline);
+
+  // ফুটার/প্রিন্ট/টিকেটের সবার নিচের পাওয়ার্ড বাই লাইন
+  const poweredByEls = qsa('.js-powered-by');
+  poweredByEls.forEach(el => el.textContent = SITE_CONFIG.poweredByLine);
+
+  // ফুটারের সোশ্যাল মিডিয়া লিংক (বাম পাশে)
+  const socialContainers = qsa('.js-social-links');
+  socialContainers.forEach(container => {
+    container.innerHTML = '';
+    const links = [
+      { url: SITE_CONFIG.facebookUrl, label: '📘 Facebook' },
+      { url: SITE_CONFIG.youtubeUrl, label: '▶️ YouTube' },
+      { url: SITE_CONFIG.instagramUrl, label: '📷 Instagram' }
+    ];
+    links.forEach(l => {
+      if (l.url) {
+        const a = document.createElement('a');
+        a.href = l.url; a.target = '_blank'; a.textContent = l.label;
+        container.appendChild(a);
+      }
+    });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
