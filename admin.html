@@ -819,6 +819,11 @@ function printReport(overall, singlePkg) {
 // ৬. এডমিন ব্যবস্থাপনা
 // ============================================================
 
+let teamAdminsCache = [];
+let selectedPhotoBase64 = null;
+let selectedPhotoMime = null;
+let selectedPhotoName = null;
+
 async function renderAdminsTab() {
   const session = Session.get();
   if (session.role !== 'admin') { qs('#admin-main').innerHTML = '<div class="empty-state">এই পাতা শুধু এডমিনের জন্য।</div>'; return; }
@@ -826,15 +831,34 @@ async function renderAdminsTab() {
   const main = qs('#admin-main');
   const res = await apiPost('getAdmins', {});
   const admins = res.ok ? res.data : [];
+  teamAdminsCache = admins;
+  selectedPhotoBase64 = null; selectedPhotoMime = null; selectedPhotoName = null;
 
   main.innerHTML = `
     <h2>টিম ব্যবস্থাপনা (এডমিন / মডারেটর / হোস্ট)</h2>
     <div class="form-card" style="max-width:620px; margin-bottom:24px;">
-      <h3 style="margin-top:0;">নতুন সদস্য যোগ করুন</h3>
+      <div class="form-group">
+        <label>সদস্য নির্বাচন করুন</label>
+        <select id="team-member-select">
+          <option value="">➕ নতুন সদস্য যোগ করুন</option>
+          ${admins.map(a => `<option value="${escapeHtml(a.username)}">${escapeHtml(a.name)} (${escapeHtml(a.username)}) — ${roleLabel(a.role)}</option>`).join('')}
+        </select>
+      </div>
+
+      <h3 id="team-form-title" style="margin-top:18px;">নতুন সদস্য যোগ করুন</h3>
       <form id="admin-form">
+        <div class="form-group">
+          <label>প্রোফাইল ছবি</label>
+          <div class="photo-box" id="photo-box">
+            <img id="photo-preview" style="display:none;">
+            <span id="photo-placeholder">📷</span>
+          </div>
+          <input type="file" id="photo-file-input" accept="image/*" style="margin-top:8px;">
+          <div class="hint">সরাসরি কম্পিউটার/মোবাইল থেকে ছবি বেছে নিন (JPG/PNG)</div>
+        </div>
         <div class="form-row">
-          <div class="form-group"><label>ইউজারনেম *</label><input type="text" name="username" required></div>
-          <div class="form-group"><label>পাসওয়ার্ড *</label><input type="text" name="password" required></div>
+          <div class="form-group"><label>ইউজারনেম *</label><input type="text" name="username" id="username-input" required></div>
+          <div class="form-group"><label>পাসওয়ার্ড <span id="password-required-mark">*</span></label><input type="text" name="password" id="password-input"></div>
         </div>
         <div class="form-row">
           <div class="form-group"><label>নাম *</label><input type="text" name="name" required></div>
@@ -851,8 +875,13 @@ async function renderAdminsTab() {
           <div class="form-group"><label>ইমেইল</label><input type="email" name="email" placeholder="name@example.com"></div>
         </div>
         <div class="form-group"><label>ঠিকানা</label><input type="text" name="address" placeholder="বর্তমান ঠিকানা"></div>
-        <div class="form-group"><label>ছবির লিংক (URL)</label><input type="url" name="photoUrl" placeholder="https://..."><div class="hint">গুগল ড্রাইভ/ইমগুর ইত্যাদিতে ছবি আপলোড করে সরাসরি লিংক এখানে বসান</div></div>
-        <button type="submit" class="btn btn-primary">যোগ করুন</button>
+        <div class="form-group" id="active-toggle-group" style="display:none;">
+          <label><input type="checkbox" name="active" id="active-checkbox" checked style="width:auto; display:inline-block; margin-right:6px;"> সক্রিয় (আনচেক করলে লগইন করতে পারবে না)</label>
+        </div>
+        <div class="flex-between">
+          <button type="submit" class="btn btn-primary" id="team-submit-btn">যোগ করুন</button>
+          <button type="button" class="btn btn-outline-forest" id="team-reset-btn" style="display:none;">বাতিল / নতুন ফরম</button>
+        </div>
       </form>
     </div>
     <div class="table-wrap"><table>
@@ -870,23 +899,121 @@ async function renderAdminsTab() {
     </table></div>
   `;
 
-  qs('#admin-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const res = await apiPost('manageAdmin', {
-      mode: 'add', username: fd.get('username'), password: fd.get('password'), name: fd.get('name'),
-      role: fd.get('role'), mobile: fd.get('mobile'), email: fd.get('email'),
-      address: fd.get('address'), photoUrl: fd.get('photoUrl')
-    });
-    if (res.ok) { showToast('যোগ করা হয়েছে', 'success'); renderAdminsTab(); }
-    else showToast(res.error, 'error');
-  });
+  qs('#photo-file-input').addEventListener('change', handlePhotoSelect);
+  qs('#team-member-select').addEventListener('change', (e) => loadTeamMemberIntoForm(e.target.value));
+  qs('#team-reset-btn').addEventListener('click', () => { qs('#team-member-select').value = ''; loadTeamMemberIntoForm(''); });
+  qs('#admin-form').addEventListener('submit', submitTeamForm);
 
   qsa('.del-admin-btn').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('এই সদস্যকে মুছে ফেলতে চান?')) return;
     const res = await apiPost('manageAdmin', { mode: 'delete', username: btn.dataset.username });
     if (res.ok) { showToast('মুছে ফেলা হয়েছে', 'success'); renderAdminsTab(); }
   }));
+}
+
+function handlePhotoSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = reader.result; // data:image/xxx;base64,....
+    const base64 = result.split(',')[1];
+    selectedPhotoBase64 = base64;
+    selectedPhotoMime = file.type;
+    selectedPhotoName = file.name;
+    qs('#photo-preview').src = result;
+    qs('#photo-preview').style.display = 'block';
+    qs('#photo-placeholder').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+function loadTeamMemberIntoForm(username) {
+  const form = qs('#admin-form');
+  selectedPhotoBase64 = null; selectedPhotoMime = null; selectedPhotoName = null;
+  qs('#photo-preview').style.display = 'none';
+  qs('#photo-placeholder').style.display = '';
+  qs('#photo-file-input').value = '';
+
+  if (!username) {
+    // নতুন সদস্য মোড
+    qs('#team-form-title').textContent = 'নতুন সদস্য যোগ করুন';
+    qs('#team-submit-btn').textContent = 'যোগ করুন';
+    qs('#team-reset-btn').style.display = 'none';
+    qs('#active-toggle-group').style.display = 'none';
+    qs('#password-required-mark').style.display = '';
+    qs('#password-input').required = true;
+    qs('#username-input').disabled = false;
+    form.reset();
+    form.dataset.mode = 'add';
+    return;
+  }
+
+  const member = teamAdminsCache.find(a => a.username === username);
+  if (!member) return;
+
+  qs('#team-form-title').textContent = 'সদস্য সম্পাদনা করুন — ' + member.name;
+  qs('#team-submit-btn').textContent = 'আপডেট করুন';
+  qs('#team-reset-btn').style.display = '';
+  qs('#active-toggle-group').style.display = '';
+  qs('#password-required-mark').style.display = 'none';
+  qs('#password-input').required = false;
+
+  form.username.value = member.username;
+  qs('#username-input').disabled = true; // ইউজারনেম পরিবর্তনযোগ্য নয়
+  form.password.value = '';
+  form.password.placeholder = 'পরিবর্তন করতে চাইলে নতুন পাসওয়ার্ড লিখুন';
+  form.name.value = member.name || '';
+  form.role.value = member.role || 'host';
+  form.mobile.value = member.mobile || '';
+  form.email.value = member.email || '';
+  form.address.value = member.address || '';
+  qs('#active-checkbox').checked = member.active !== false;
+
+  if (member.photoUrl) {
+    qs('#photo-preview').src = member.photoUrl;
+    qs('#photo-preview').style.display = 'block';
+    qs('#photo-placeholder').style.display = 'none';
+  }
+  form.dataset.mode = 'edit';
+}
+
+async function submitTeamForm(e) {
+  e.preventDefault();
+  const form = e.target;
+  const mode = form.dataset.mode === 'edit' ? 'edit' : 'add';
+  const btn = qs('#team-submit-btn');
+  btn.disabled = true; btn.textContent = mode === 'edit' ? 'আপডেট হচ্ছে...' : 'যোগ হচ্ছে...';
+
+  const fd = new FormData(form);
+  const payload = {
+    mode,
+    username: fd.get('username'),
+    password: fd.get('password') || '',
+    name: fd.get('name'),
+    role: fd.get('role'),
+    mobile: fd.get('mobile'),
+    email: fd.get('email'),
+    address: fd.get('address')
+  };
+  if (mode === 'edit') {
+    payload.active = qs('#active-checkbox').checked;
+  }
+  if (selectedPhotoBase64) {
+    payload.photoBase64 = selectedPhotoBase64;
+    payload.photoMimeType = selectedPhotoMime;
+    payload.photoFileName = selectedPhotoName;
+  }
+
+  try {
+    const res = await apiPost('manageAdmin', payload);
+    if (!res.ok) throw new Error(res.error || 'ব্যর্থ হয়েছে');
+    showToast(mode === 'edit' ? 'সদস্যের তথ্য আপডেট হয়েছে' : 'নতুন সদস্য যোগ হয়েছে', 'success');
+    renderAdminsTab();
+  } catch (err) {
+    showToast('ত্রুটি: ' + err.message, 'error');
+    btn.disabled = false; btn.textContent = mode === 'edit' ? 'আপডেট করুন' : 'যোগ করুন';
+  }
 }
 
 checkSession();

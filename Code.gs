@@ -110,6 +110,8 @@ function doGet(e) {
         return jsonResponse({ ok: true, data: findTickets(e.parameter.name, e.parameter.mobile) });
       case 'getAdminNames':
         return jsonResponse({ ok: true, data: getAdminNames() });
+      case 'getAdminByUsername':
+        return jsonResponse({ ok: true, data: getAdminByUsername(e.parameter.username) });
       case 'getTeamContacts':
         return jsonResponse({ ok: true, data: getTeamContacts() });
       case 'getPackageCounts':
@@ -204,19 +206,40 @@ function getTeamContacts() {
     }));
 }
 
+// base64 ছবি ডেটা Google Drive-এ আপলোড করে পাবলিক ভিউ URL রিটার্ন করে
+function uploadPhotoToDrive(base64Data, fileName, mimeType) {
+  const folderName = 'TourAppProfilePhotos';
+  const folders = DriveApp.getFoldersByName(folderName);
+  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+
+  const decoded = Utilities.base64Decode(base64Data);
+  const blob = Utilities.newBlob(decoded, mimeType || 'image/jpeg', fileName || ('photo_' + new Date().getTime()));
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  // সরাসরি ছবি হিসেবে দেখানোর জন্য Google-এর ইমেজ প্রক্সি ফরম্যাট
+  return 'https://lh3.googleusercontent.com/d/' + file.getId();
+}
+
 function manageAdmin(body) {
   const sheet = getSheet(SHEET_NAMES.ADMINS);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   const usernameCol = headers.indexOf('username');
 
+  // যদি নতুন ছবি (base64) পাঠানো হয়ে থাকে, প্রথমে Drive-এ আপলোড করে URL বানানো
+  let photoUrl = body.photoUrl;
+  if (body.photoBase64) {
+    photoUrl = uploadPhotoToDrive(body.photoBase64, body.photoFileName, body.photoMimeType);
+  }
+
   if (body.mode === 'add') {
     sheet.appendRow([
       body.username, body.password, body.role, body.name,
-      body.mobile || '', body.email || '', body.address || '', body.photoUrl || '', true
+      body.mobile || '', body.email || '', body.address || '', photoUrl || '', true
     ]);
     SpreadsheetApp.flush();
-    return { ok: true };
+    return { ok: true, data: { photoUrl } };
   }
   for (let i = 1; i < data.length; i++) {
     if (data[i][usernameCol] === body.username) {
@@ -228,14 +251,26 @@ function manageAdmin(body) {
         if (body.mobile !== undefined) sheet.getRange(i + 1, headers.indexOf('mobile') + 1).setValue(body.mobile);
         if (body.email !== undefined) sheet.getRange(i + 1, headers.indexOf('email') + 1).setValue(body.email);
         if (body.address !== undefined) sheet.getRange(i + 1, headers.indexOf('address') + 1).setValue(body.address);
-        if (body.photoUrl !== undefined) sheet.getRange(i + 1, headers.indexOf('photoUrl') + 1).setValue(body.photoUrl);
+        if (photoUrl !== undefined && photoUrl !== '') sheet.getRange(i + 1, headers.indexOf('photoUrl') + 1).setValue(photoUrl);
         if (body.active !== undefined) sheet.getRange(i + 1, headers.indexOf('active') + 1).setValue(body.active);
         SpreadsheetApp.flush();
-        return { ok: true };
+        return { ok: true, data: { photoUrl } };
       }
     }
   }
   return { ok: false, error: 'এডমিন পাওয়া যায়নি' };
+}
+
+// নির্দিষ্ট একজন সদস্যের সম্পূর্ণ প্রোফাইল তথ্য (এডিট ফরম প্রিফিল করার জন্য)
+function getAdminByUsername(username) {
+  const admins = sheetToObjects(getSheet(SHEET_NAMES.ADMINS));
+  const found = admins.find(a => a.username === username);
+  if (!found) return null;
+  return {
+    username: found.username, role: found.role, name: found.name,
+    mobile: found.mobile, email: found.email, address: found.address,
+    photoUrl: found.photoUrl, active: found.active
+  };
 }
 
 // ---------- প্যাকেজ ----------
@@ -267,20 +302,42 @@ function createPackage(body) {
 
 function addSeatsForVehicles(packageId, vehicles) {
   const seatSheet = getSheet(SHEET_NAMES.SEATS);
-  const existing = sheetToObjects(seatSheet).filter(s => s.packageId === packageId);
-  const existingVehicleNames = new Set(existing.map(s => s.vehicleName));
-  const rows = [];
+  const data = seatSheet.getDataRange().getValues();
+  const headers = data[0];
+  const pkgCol = headers.indexOf('packageId');
+  const vNameCol = headers.indexOf('vehicleName');
+  const seatNoCol = headers.indexOf('seatNo');
+  const statusCol = headers.indexOf('status');
 
   vehicles.forEach(v => {
-    if (existingVehicleNames.has(v.name)) return; // আগে থেকে থাকা গাড়ির সীট আবার তৈরি হবে না
-    const seatNos = generateSeatNumbers(v.seatCount);
-    seatNos.forEach(seatNo => {
-      rows.push([packageId, v.name, seatNo, 'available', '', '']);
-    });
+    const desiredSeatNos = generateSeatNumbers(v.seatCount);
+    const existingRows = []; // {rowIndex(1-based sheet row), seatNo, status}
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][pkgCol] === packageId && data[i][vNameCol] === v.name) {
+        existingRows.push({ rowIndex: i + 1, seatNo: data[i][seatNoCol], status: data[i][statusCol] });
+      }
+    }
+    const existingSeatNos = new Set(existingRows.map(r => r.seatNo));
+    const desiredSet = new Set(desiredSeatNos);
+
+    // নতুন যোগ হওয়া সীট যোগ করা (সীট সংখ্যা বাড়ানো হলে)
+    const toAdd = desiredSeatNos.filter(s => !existingSeatNos.has(s));
+    if (toAdd.length > 0) {
+      const newRows = toAdd.map(seatNo => [packageId, v.name, seatNo, 'available', '', '']);
+      seatSheet.getRange(seatSheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
+    }
+
+    // বাদ পড়া সীট মুছে ফেলা (সীট সংখ্যা কমানো হলে) - কিন্তু বুক/হোল্ড করা সীট কখনো মুছবে না
+    const toRemove = existingRows.filter(r => !desiredSet.has(r.seatNo));
+    const blockedRemoval = toRemove.filter(r => r.status === 'booked' || r.status === 'held');
+    const safeToRemove = toRemove.filter(r => r.status === 'available');
+    // বড় থেকে ছোট রো নম্বর অনুযায়ী মুছলে ইনডেক্স ঠিক থাকে
+    safeToRemove.sort((a, b) => b.rowIndex - a.rowIndex).forEach(r => seatSheet.deleteRow(r.rowIndex));
+
+    if (blockedRemoval.length > 0) {
+      Logger.log('সতর্কতা: ' + v.name + ' এর ' + blockedRemoval.map(r => r.seatNo).join(', ') + ' সীট বুক/হোল্ড থাকায় মুছা হয়নি।');
+    }
   });
-  if (rows.length > 0) {
-    seatSheet.getRange(seatSheet.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
-  }
 }
 
 // সীট নম্বর তৈরি: প্রতি সারিতে ৪টি (A1-A4, B1-B4...)। শেষে ১টি সীট বাকি থাকলে

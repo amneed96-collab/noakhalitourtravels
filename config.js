@@ -23,7 +23,7 @@ const SITE_CONFIG = {
   phone: '01853302933',
 
   // লোগো - ছবির লিংক বসান (ফাঁকা রাখলে ডিফল্ট 🧳 আইকন দেখাবে)
-logoUrl: 'https://drive.google.com/thumbnail?id=17-XQUHTUc_fvNQi16iKfVGg0xDFHmXMg&sz=w1000',
+logoUrl: 'https://drive.google.com/thumbnail?id=1atfbO48SfDlRn0H-0hhqfaHbJ6NEnEdo&sz=w1000',
 
   // বিকাশ/নগদ নম্বর (বুকিং ফরমে দেখানো হবে)
   bkashNumber: '01794709881',
